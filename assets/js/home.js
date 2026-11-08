@@ -71,16 +71,77 @@
         <span class="btn primary featured-cta">${ic('unlock', 18)} افتح المحتوى مجانًا</span>
       </div></a>`;
 
+  // Most viewed, beside the newest post.
+  const popular = posts.length > 3 ? posts.slice().sort((a, b) => (b.views || 0) - (a.views || 0)).slice(0, 4) : [];
+  if (popular.length) {
+    $('popularList').innerHTML = popular.map((p, i) => {
+      const img = window.safeImg(p.cover_url);
+      return `<li><a href="${href(p)}"><b class="rank">${i + 1}</b>
+        ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ''}
+        <span><strong dir="auto">${esc(p.title)}</strong><small>${ic('eye', 13)} ${window.fmtNum(p.views)} مشاهدة</small></span></a></li>`;
+    }).join('');
+  }
+
+  const PAGE = 9;
+  let shown = PAGE;
+  let current = posts;
+
   function show(list, searching) {
+    current = list;
     $('count').textContent = `(${list.length})`;
+    $('popular').hidden = searching || !popular.length;
+    document.querySelector('.top-row').classList.toggle('has-popular', !searching && !!popular.length);
     if (!list.length) {
       $('featured').innerHTML = '';
+      $('more').hidden = true;
       grid.innerHTML = `<p class="muted center">مفيش نتايج. جرّب كلمة تانية.</p>`;
       return;
     }
     const top = searching ? null : list[0];
     $('featured').innerHTML = top ? featured(top) : '';
-    grid.innerHTML = (top ? list.slice(1) : list).map(card).join('');
+    const rest = top ? list.slice(1) : list;
+    grid.innerHTML = rest.slice(0, shown).map(card).join('');
+    $('more').hidden = rest.length <= shown;
+    revealCards();
+  }
+
+  $('more').addEventListener('click', () => { shown += PAGE; show(current, !!$('search').value.trim()); });
+
+  // ------------------------------------------------------------------ 3D
+  // Cards rise into place as they come into view, and tilt toward the mouse on computers.
+  const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let watched = false;
+  const io = !calm && window.IntersectionObserver
+    ? new IntersectionObserver(entries => entries.forEach(en => {
+      watched = true;
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    }), { rootMargin: '0px 0px -8% 0px' })
+    : null;
+  // Safety net: if the browser never reports what's on screen, nothing may stay hidden.
+  setTimeout(() => {
+    if (!watched) document.querySelectorAll('.post-card, .featured').forEach(el => el.classList.add('in'));
+  }, 2000);
+  function revealCards() {
+    document.querySelectorAll('.post-card:not(.in), .featured:not(.in)').forEach((el, i) => {
+      if (!io) { el.classList.add('in'); return; }
+      el.style.transitionDelay = `${Math.min(i, 5) * 60}ms`;
+      io.observe(el);
+    });
+  }
+  if (!calm && window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    document.addEventListener('pointermove', e => {
+      const el = e.target.closest && e.target.closest('.post-card, .featured');
+      document.querySelectorAll('.tilting').forEach(t => { if (t !== el) { t.classList.remove('tilting'); t.style.removeProperty('--rx'); t.style.removeProperty('--ry'); } });
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      const strength = el.classList.contains('featured') ? 4 : 8;
+      el.classList.add('tilting');
+      el.style.setProperty('--ry', `${(x - 0.5) * strength}deg`);
+      el.style.setProperty('--rx', `${(0.5 - y) * strength}deg`);
+      el.style.setProperty('--mx', `${x * 100}%`);
+      el.style.setProperty('--my', `${y * 100}%`);
+    });
   }
 
   show(posts, false);
@@ -88,6 +149,7 @@
     $('searchBox').hidden = false;
     $('search').addEventListener('input', e => {
       const q = e.target.value.trim().toLowerCase();
+      shown = PAGE;
       show(q ? posts.filter(p => String(p.title).toLowerCase().includes(q)) : posts, !!q);
     });
   }

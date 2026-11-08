@@ -208,6 +208,46 @@
     if (document.body.classList.contains('reading')) window.scrollTo(0, 0);
   }
 
+  // Downloads a file, carrying on from where it stopped when the connection drops or stalls,
+  // instead of waiting forever. Gives up after several tries, and the direct link takes over.
+  async function fetchResumable(url, onProgress) {
+    const STALL_MS = 15000;
+    const chunks = [];
+    let got = 0, total = 0, type = '', tries = 0;
+    for (;;) {
+      const ctl = new AbortController();
+      let timer;
+      const arm = () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), STALL_MS); };
+      try {
+        arm();
+        const res = await fetch(url, { headers: got ? { Range: `bytes=${got}-` } : {}, signal: ctl.signal, cache: 'no-store' });
+        if (got && res.status !== 206) { chunks.length = 0; got = 0; }
+        if (!res.ok || !res.body) throw new Error('download');
+        type = type || res.headers.get('content-type') || 'application/octet-stream';
+        if (!total) {
+          const range = res.headers.get('content-range');
+          total = range ? Number(range.split('/')[1]) || 0 : Number(res.headers.get('content-length')) || 0;
+        }
+        const reader = res.body.getReader();
+        for (;;) {
+          arm();
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          got += value.length;
+          onProgress(got, total);
+        }
+        clearTimeout(timer);
+        if (total && got < total) throw new Error('incomplete');
+        return new Blob(chunks, { type });
+      } catch (e) {
+        clearTimeout(timer);
+        if (++tries > 6) throw e;
+        await new Promise(res => setTimeout(res, 1500));
+      }
+    }
+  }
+
   // Downloads inside the page so the visitor sees exactly how far it got.
   async function downloadFile(card, item) {
     if (card.dataset.busy) return;
@@ -226,22 +266,13 @@
     };
     try {
       if (item.value.startsWith('data:')) { card.removeAttribute('data-act'); card.click(); return; }
+      // In-app browsers often can't save a file made in the page, so they get the direct link,
+      // which the phone's own downloader handles.
+      if (inApp || !window.ReadableStream || !window.AbortController) { location.href = card.href; return; }
       bar.hidden = false;
       show(0, 0);
-      const res = await fetch(item.value);
-      if (!res.ok || !res.body) throw new Error('download');
-      const total = Number(res.headers.get('content-length')) || 0;
-      const reader = res.body.getReader();
-      const chunks = [];
-      let done = 0;
-      for (;;) {
-        const { done: finished, value } = await reader.read();
-        if (finished) break;
-        chunks.push(value);
-        done += value.length;
-        show(done, total);
-      }
-      const url = URL.createObjectURL(new Blob(chunks, { type: res.headers.get('content-type') || 'application/octet-stream' }));
+      const blob = await fetchResumable(item.value, show);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = item.fileName || 'file';
@@ -257,7 +288,7 @@
       text.textContent = original;
       btn.innerHTML = originalBtn;
       bar.hidden = true;
-      window.open(card.href, '_blank', 'noopener');
+      location.href = card.href;
     } finally {
       delete card.dataset.busy;
     }

@@ -77,6 +77,16 @@
     setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 2800);
   };
 
+  // Visitor pages: blocks selecting and copying the page's text. Fields stay usable, and
+  // the copy buttons still work, since they copy through their own hidden field.
+  if (document.body && document.body.matches('.home, .link-page')) {
+    const isField = el => !!(el && el.closest && el.closest('input, textarea'));
+    ['copy', 'cut', 'selectstart', 'dragstart'].forEach(type => document.addEventListener(type, e => {
+      if (!isField(e.target) && !isField(document.activeElement)) e.preventDefault();
+    }));
+    document.addEventListener('contextmenu', e => { if (!isField(e.target)) e.preventDefault(); });
+  }
+
   window.copyText = async function (text) {
     try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
     const ta = document.createElement('textarea');
@@ -123,7 +133,7 @@
       const T = TYPE[i.type] || TYPE.url;
       return `<li><i class="tz-ic">${ic(T.icon, 18)}</i>
         <span><b dir="auto">${esc(i.label || T.one)}</b><small>${TYPE_TAG[i.type] || T.one}</small></span>
-        <em class="tz-lock" aria-label="مقفول">${ic('lock', 15)}</em></li>`;
+        <em class="tz-lock">${ic('lock', 14)} مقفول</em></li>`;
     }).join('');
     return `<div class="teaser"><h3>${ic('gift', 18)} هتحصل على إيه؟</h3><ul class="tz-list">${rows}</ul></div>`;
   }
@@ -150,7 +160,6 @@
       </button>
       ${verify}
       ${m ? `<p class="step-msg ${m.kind || ''}" role="alert">${esc(m.text)}</p>` : ''}
-      ${checking && !m ? '<p class="step-msg info">بعد ما تخلص ارجع للصفحة دي، والمحتوى هيتفتح لوحده.</p>' : ''}
     </div>`;
   }
 
@@ -252,7 +261,13 @@
         ${opened ? `<div class="got-title"><span class="got-seal">${ic('check', 24)}</span>
             <div><h2>تم فتح المحتوى</h2><p>كل حاجة جاهزة ليك هنا.</p></div></div>
           <div class="got-list">${s.items.map(itemHtml).join('') || '<p class="muted">لا يوجد محتوى بعد.</p>'}</div>`
-        : ready ? `<div class="ready-panel ${s.unlocking ? '' : 'enter'}" role="status">
+        : ready && s.unlocking ? `<div class="ready-panel unlocking" role="status" aria-live="polite">
+            <div class="unlock-loader"><span class="unlock-ring" aria-hidden="true"></span>${ic('unlock', 30)}</div>
+            <h2>تم التحقق بنجاح</h2>
+            <p>جاري فتح المحتوى، ثواني وكل حاجة هتكون جاهزة...</p>
+            <span class="unlock-bar" aria-hidden="true"><i></i></span>
+          </div>`
+        : ready ? `<div class="ready-panel enter" role="status">
             <span class="ready-seal">${ic('unlock', 40)}</span>
             <h2>${total ? 'تم التحقق بنجاح' : 'المحتوى جاهز'}</h2>
             <p>${total ? 'كده كل حاجة تمام، المحتوى جاهز ليك.' : 'اضغط على الزر علشان تحصل عليه.'}</p>
