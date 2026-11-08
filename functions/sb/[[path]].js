@@ -6,7 +6,7 @@ const RPC = '/rest/v1/rpc/';
 const FILES = '/storage/v1/object/public/media/';
 const ALLOWED_RPC = new Set(['get_post', 'list_public_posts', 'register_view', 'unlock_post']);
 const PASS_HEADERS = ['apikey', 'content-type', 'accept', 'range'];
-const OTHER_SITES = ['https://abu-hanin1.github.io'];
+const OTHER_SITES = ['https://walid-salama.github.io', 'https://abu-hanin1.github.io'];
 
 function allowSite(request, headers) {
   const origin = request.headers.get('Origin');
