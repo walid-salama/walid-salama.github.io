@@ -25,6 +25,7 @@
     phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
     desktop: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8.5 21h7M12 17v4"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    arrow: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
     sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
     brush: '<path d="M20 4 10.5 13.5"/><path d="M10.5 13.5c-3-.5-5 1.5-5 4 0 1-.8 1.8-2 2 2.500 1.500 8 1.500 9-3 .3-1.200-.6-2.500-2-3z"/>',
     gift: '<rect x="4" y="9" width="16" height="11" rx="2"/><path d="M2.500 9h19M12 9v11M12 9S10 3.500 7.500 4.500 8 9 12 9zm0 0s2-5.500 4.500-4.500S16 9 12 9z"/>',
@@ -113,13 +114,18 @@
   };
   window.ITEM_TYPES = TYPE;
 
+  const TYPE_TAG = { url: 'رابط', file: 'ملف للتحميل', text: 'برومبت جاهز للنسخ', article: 'مقالة كاملة' };
+
+  // Names each thing the visitor will get, so "ملف" alone never leaves them guessing.
   function teaser(summary) {
     if (!summary || !summary.length) return '';
-    const counts = {};
-    summary.forEach(i => { counts[i.type] = (counts[i.type] || 0) + 1; });
-    const chips = Object.keys(TYPE).filter(k => counts[k]).map(k =>
-      `<li>${ic(TYPE[k].icon, 17)}<b>${counts[k]}</b> ${counts[k] > 1 ? TYPE[k].many : TYPE[k].one}</li>`).join('');
-    return `<div class="teaser"><h3>${ic('gift', 18)} هتحصل على إيه؟</h3><ul>${chips}</ul></div>`;
+    const rows = summary.map(i => {
+      const T = TYPE[i.type] || TYPE.url;
+      return `<li><i class="tz-ic">${ic(T.icon, 18)}</i>
+        <span><b dir="auto">${esc(i.label || T.one)}</b><small>${TYPE_TAG[i.type] || T.one}</small></span>
+        <em class="tz-lock" aria-label="مقفول">${ic('lock', 15)}</em></li>`;
+    }).join('');
+    return `<div class="teaser"><h3>${ic('gift', 18)} هتحصل على إيه؟</h3><ul class="tz-list">${rows}</ul></div>`;
   }
 
   function stepHtml(step, s) {
@@ -144,6 +150,7 @@
       </button>
       ${verify}
       ${m ? `<p class="step-msg ${m.kind || ''}" role="alert">${esc(m.text)}</p>` : ''}
+      ${checking && !m ? '<p class="step-msg info">بعد ما تخلص ارجع للصفحة دي، والمحتوى هيتفتح لوحده.</p>' : ''}
     </div>`;
   }
 
@@ -167,6 +174,26 @@
     const host = new URL(url).hostname.replace(/^www\./, '');
     return `<a class="got got-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">
       <i class="got-ic">${ic('link', 24)}</i><span><b dir="auto">${label}</b><small dir="ltr">${esc(host)}</small></span><em>${ic('external', 18)} فتح</em></a>`;
+  }
+
+  // The locked side: says plainly what to do, and that the content then opens by itself.
+  function gateHtml(steps, s, doneCount, total) {
+    const firstAction = window.getAction(steps[0].action);
+    const onYouTube = firstAction && firstAction.p === 'youtube';
+    const single = total === 1;
+    return `<div class="gate">
+      <div class="gate-head"><span class="gate-lock">${ic('lock', 26)}</span>
+        <div><h2>المحتوى مقفول</h2>
+          <p>${single && onYouTube ? 'اشترك في القناة، والمحتوى هيتفتح لك تلقائيًا.' : 'نفّذ الخطوات دي، والمحتوى هيتفتح لك تلقائيًا.'}</p></div></div>
+      ${single ? '' : `<div class="prog"><span>الخطوات</span><b>${doneCount}/${total}</b>
+        <i style="--p:${(doneCount / total) * 100}%"></i></div>`}
+      <div class="steps">${steps.map(x => stepHtml(x, s)).join('')}</div>
+      <ol class="gate-how">
+        <li>${onYouTube ? 'اضغط الزر وهيفتح لك يوتيوب' : 'اضغط الزر ونفّذ المطلوب'}</li>
+        <li>${onYouTube ? 'اشترك في القناة وارجع للصفحة دي' : 'ارجع للصفحة دي'}</li>
+        <li>المحتوى هيتفتح لوحده <strong>مجانًا</strong></li>
+      </ol>
+    </div>`;
   }
 
   // An article takes the whole page, with no card around it. Any other content follows it.
@@ -234,16 +261,7 @@
               <span>${s.unlocking ? 'جاري الفتح...' : esc(theme.unlockLabel || 'افتح المحتوى')}</span>
             </button>
           </div>`
-        : `<div class="prog"><span>الخطوات المطلوبة</span><b>${doneCount}/${total}</b>
-            <i style="--p:${(doneCount / total) * 100}%"></i></div>
-          <div class="steps">${steps.map(x => stepHtml(x, s)).join('')}</div>
-          <button class="unlock-btn" data-act="unlock" disabled>
-            ${ic('lock', 24)}
-            <span>${esc(theme.unlockLabel || 'افتح المحتوى')}</span>
-          </button>
-          <p class="unlock-hint">كمّل كل الخطوات اللي فوق الأول</p>
-          <div class="how"><b>إزاي تفتح الرابط؟</b>
-            <span>اضغط على الزر، نفّذ الخطوة، وارجع لنفس الصفحة هتلاقي القفل مفتوح. <strong>مجانًا</strong> وبدون أي تعقيد.</span></div>`}
+        : gateHtml(steps, s, doneCount, total)}
       </div>
     </article>`;
   };

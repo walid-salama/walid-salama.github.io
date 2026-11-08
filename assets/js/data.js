@@ -121,26 +121,53 @@
   // --------------------------------------------------------------- supabase
   // Every request has a time limit, so a stalled connection ends in a message
   // instead of a page that keeps loading forever.
-  async function rpcOnce(name, args) {
+  class HttpError extends Error {}
+
+  async function rpcVia(base, name, args, ms) {
     const ctl = window.AbortController ? new AbortController() : null;
-    const timer = ctl && setTimeout(() => ctl.abort(), 20000);
+    const timer = ctl && setTimeout(() => ctl.abort(), ms);
     try {
-      const res = await fetch(`${C.apiBase}/rest/v1/rpc/${name}`, {
+      const res = await fetch(`${base}/rest/v1/rpc/${name}`, {
         method: 'POST',
         headers: { apikey: C.supabaseAnonKey, 'Content-Type': 'application/json' },
         body: JSON.stringify(args || {}),
         signal: ctl ? ctl.signal : undefined,
       });
-      if (!res.ok) throw new Error('rpc_failed');
+      if (!res.ok) throw new HttpError('rpc_failed');
       // Pictures and files follow the same route as the data.
-      return JSON.parse((await res.text()).split(C.supabaseUrl).join(C.apiBase));
+      return JSON.parse((await res.text()).split(C.supabaseUrl).join(base));
     } finally {
       clearTimeout(timer);
     }
   }
 
+  // Tries each route until one answers, starting with the one that worked last on this
+  // device. A route that answers with an error is not retried elsewhere: the server got it.
+  const ROUTE_KEY = 'miftah_route';
+  async function rpcOnce(name, args) {
+    const routes = C.apiRoutes || [C.apiBase];
+    const first = Math.min(store.get(ROUTE_KEY, 0), routes.length - 1);
+    const order = routes.map((_, i) => (first + i) % routes.length);
+    let lastError;
+    for (let k = 0; k < order.length; k++) {
+      try {
+        const out = await rpcVia(routes[order[k]], name, args, k === order.length - 1 ? 20000 : 12000);
+        if (order[k] !== first) store.set(ROUTE_KEY, order[k]);
+        C.apiBase = routes[order[k]];
+        return out;
+      } catch (e) {
+        if (e instanceof HttpError) throw e;
+        lastError = e;
+      }
+    }
+    throw lastError;
+  }
+
   // Only for reads: repeating a write could count a view or an unlock twice.
-  const rpcRead = (name, args) => rpcOnce(name, args).catch(() => rpcOnce(name, args));
+  const rpcRead = (name, args) => rpcOnce(name, args).catch(e => {
+    if (e instanceof HttpError) throw e;
+    return rpcOnce(name, args);
+  });
 
   let client;
   const sb = () => client || (client = window.supabase.createClient(C.supabaseUrl, C.supabaseAnonKey));

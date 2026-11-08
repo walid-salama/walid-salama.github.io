@@ -121,9 +121,7 @@
     const step = post.steps.find(s => s.id === id);
     const url = window.safeUrl(window.stepUrl(step));
     if (!url || state.checking.has(id) || (!step.verify && state.done.has(id))) return;
-    // Inside Messenger on Android, YouTube would ask for a login, so offer Chrome again.
-    if (inApp === 'android') { window.InApp.open(inApp, visit.has(viewKey)); return; }
-    window.open(url, '_blank', 'noopener');
+    // The wait starts before leaving: the visitor may not come back to this same page load.
     state.clicked.add(id);
     if (!step.verify) {
       started[id] = Date.now();
@@ -133,6 +131,22 @@
     }
     delete state.msg[id];
     render();
+    const a = window.getAction(step.action);
+    if (a && a.p === 'youtube') {
+      // The YouTube app is already signed in, even when the page runs inside Messenger.
+      window.InApp.openYouTube(url);
+    } else if (inApp) {
+      // Apps often block new windows, so the link opens in place. Back returns here.
+      location.href = url;
+    } else {
+      const w = window.open(url, '_blank');
+      if (w) { try { w.opener = null; } catch (e) {} } else location.href = url;
+    }
+  }
+
+  // All steps done: the content opens by itself, with no extra tap.
+  function unlockWhenReady() {
+    if (post.steps.length && post.steps.every(s => state.done.has(s.id)) && !state.items && !state.unlocking) unlock();
   }
 
   // Works from the time of the click, so it also runs while the visitor is on YouTube.
@@ -152,9 +166,8 @@
     if (!finished) return;
     visit.set(checkingKey, started);
     saveDone();
-    const allDone = post.steps.every(s => state.done.has(s.id));
-    if (allDone) celebrate();
     render();
+    unlockWhenReady();
   }
 
   function celebrate() {
@@ -176,6 +189,7 @@
       const res = await window.DB.unlock(slug, { pass: window.store.get(PASS_KEY, null), count: first });
       if (res.ok) {
         if (first) { post.unlocks = (post.unlocks || 0) + 1; visit.mark(openedKey); }
+        if (post.steps.length) visit.set(doneKey, post.steps.filter(s => !s.verify).map(s => s.id));
         state.items = res.items || [];
         celebrate();
       } else if (res.reason === 'expired') {
@@ -334,6 +348,7 @@
     if (pass && post.steps.some(s => s.verify)) {
       try { applyVerified(await window.DB.unlock(slug, { pass })); render(); } catch (e) {}
     }
+    unlockWhenReady();
 
     const viewsBefore = post.views;
     await countView();
@@ -363,4 +378,15 @@
   const leaving = !!slug && !!inApp && window.InApp.autoOpen(inApp);
   setTimeout(init, leaving ? 1200 : 0);
   if (inApp) setTimeout(showChromeBar, 2500);
+
+  // Apps can ignore a jump the visitor didn't tap for, so the first touch on the page
+  // (outside the buttons, which do their own thing) asks for Chrome again.
+  if (inApp === 'android') {
+    const onTouch = e => {
+      if (e.target.closest && e.target.closest('button, a, [data-act], [data-slide-track]')) return;
+      document.removeEventListener('click', onTouch, true);
+      window.InApp.open(inApp, visit.has(viewKey));
+    };
+    document.addEventListener('click', onTouch, true);
+  }
 })();

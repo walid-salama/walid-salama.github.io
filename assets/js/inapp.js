@@ -26,6 +26,25 @@
       return `intent://${rest}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(fallback.href)};end`;
     },
 
+    // Opens a YouTube link in the YouTube app, where the visitor is already signed in.
+    // Android falls back to the web page by itself; iPhone needs a moment to tell.
+    openYouTube(url) {
+      const ua = navigator.userAgent;
+      const u = new URL(url);
+      const rest = u.host + u.pathname + u.search;
+      if (/android/i.test(ua)) {
+        location.href = `intent://${rest}#Intent;scheme=https;package=com.google.android.youtube;S.browser_fallback_url=${encodeURIComponent(url)};end`;
+        return;
+      }
+      if (/iphone|ipad|ipod/i.test(ua)) {
+        location.href = `youtube://${rest}`;
+        setTimeout(() => { if (!document.hidden) location.href = url; }, 1500);
+        return;
+      }
+      const w = window.open(url, '_blank');
+      if (w) { try { w.opener = null; } catch (e) {} } else location.href = url;
+    },
+
     open(platform, counted) {
       location.href = InApp.chromeUrl(location.href, platform, counted);
     },
