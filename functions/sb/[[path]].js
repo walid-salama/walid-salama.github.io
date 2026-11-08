@@ -1,7 +1,7 @@
 // Cloudflare Pages only: passes visitor requests on to the database under this address.
 // It is also the backup route for the GitHub Pages address, for networks that block the
 // database directly. Limited to what visitors use, so it can't serve as an open door.
-const UPSTREAM = 'https://jyrcywuxqfandzerlrga.supabase.co';
+const UPSTREAM = 'https://hhqxhdgylnjxkqqcowxk.supabase.co';
 const RPC = '/rest/v1/rpc/';
 const FILES = '/storage/v1/object/public/media/';
 const ALLOWED_RPC = new Set(['get_post', 'list_public_posts', 'register_view', 'unlock_post']);
