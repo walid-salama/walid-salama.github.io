@@ -13,6 +13,9 @@ window.SITE_CONFIG = {
   // Seconds a step stays on "جاري التحقق" after its button is pressed, then it completes.
   checkSeconds: 15,
 
+  // Where the dashboard keeps books and pictures: a GitHub repository published by GitHub Pages.
+  files: { owner: 'walid-salama', repo: 'files', branch: 'main', base: 'https://walid-salama.github.io/files' },
+
   bio: 'منشئ محتوى فيديو. كتب وأدوات وبرومبتات مجانية، تفتحها بخطوة واحدة.',
   // Shown on the home page. p picks the icon and color from PLATFORMS in actions.js.
   socials: [

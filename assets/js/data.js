@@ -211,25 +211,13 @@
       return { ...r.data, items };
     },
     async deletePost(id) { check(await sb().from('posts').delete().eq('id', id)); },
-    // Uses XMLHttpRequest because it reports upload progress, which supabase-js doesn't.
+    // Files go to GitHub (assets/js/storage.js), not Supabase Storage: the free plan allows
+    // only 5 GB of downloads a month, and books alone used far more. Pictures are shrunk first.
     async upload(file, folder, onProgress) {
-      if (file.size > 50 * 1024 * 1024) throw new Error('الحد الأقصى لحجم الملف 50 ميجا.');
-      const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
-      const path = `${folder}/${uid()}${ext}`;
-      const { data } = await sb().auth.getSession();
-      await new Promise((res, rej) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${C.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/media/${path}`);
-        xhr.setRequestHeader('apikey', C.supabaseAnonKey);
-        xhr.setRequestHeader('Authorization', `Bearer ${data.session ? data.session.access_token : ''}`);
-        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-        xhr.setRequestHeader('cache-control', 'max-age=3600');
-        if (onProgress) xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded, e.total); };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? res() : rej(new Error('تعذر رفع الملف. حاول تاني.')));
-        xhr.onerror = () => rej(new Error('انقطع الاتصال أثناء رفع الملف. حاول تاني.'));
-        xhr.send(file);
-      });
-      return sb().storage.from('media').getPublicUrl(path).data.publicUrl;
+      const store = window.GitHubStore;
+      if (!store) throw new Error('حدّث الصفحة وحاول تاني.');
+      const ready = file.type.startsWith('image/') ? await store.compressImage(file) : file;
+      return store.upload(ready, folder, onProgress);
     },
   };
 

@@ -76,7 +76,11 @@
     const FILTERS = [['all', 'الكل'], ['public', 'عام'], ['private', 'خاص'], ['draft', 'مسودات']];
     const STATUS = { public: 'عام', private: 'خاص', draft: 'مسودة' };
 
+    const needsStore = !DB.isDemo && window.GitHubStore && !window.GitHubStore.ready();
     app.innerHTML = `
+      ${needsStore ? `<div class="card store-note">${ic('upload', 22)}
+        <span><b>اربط التخزين على GitHub</b><small>علشان ترفع الكتب والصور من اللوحة من غير ما تستهلك حد Supabase المجاني.</small></span>
+        <button class="btn primary sm" data-act="storage">اربط دلوقتي</button></div>` : ''}
       <div class="page-head">
         <h1>${ic('unlock', 30)} روابط الفتح</h1>
         <a class="btn primary" href="#/new">${ic('plus', 20)} رابط جديد</a>
@@ -119,6 +123,7 @@
       if (f) { filter = f.dataset.filter; renderList(); return; }
       const b = e.target.closest('[data-act]');
       if (!b) return;
+      if (b.dataset.act === 'storage') { openStorage(); return; }
       if (b.dataset.act === 'copy') {
         const ok = await copyText(linkFor(b.dataset.slug));
         toast(ok ? 'تم نسخ الرابط!' : 'تعذر النسخ', ok ? 'ok' : 'err');
@@ -822,6 +827,123 @@
     out.innerHTML = `${ic('logout', 18)} خروج`;
     out.onclick = async () => { await DB.signOut(); location.reload(); };
     document.getElementById('demoBar').hidden = !DB.isDemo;
+    const store = document.getElementById('storageBtn');
+    if (store && !DB.isDemo && session) {
+      store.hidden = false;
+      store.innerHTML = `${ic('upload', 18)} التخزين`;
+      store.onclick = openStorage;
+    }
+  }
+
+  // ---------------------------------------------------------------- storage
+  // Books and pictures live on GitHub (assets/js/storage.js). This screen connects the
+  // dashboard once, and moves the files still sitting in Supabase Storage.
+  function openStorage() {
+    const S = window.GitHubStore;
+    const d = document.createElement('dialog');
+    d.className = 'modal';
+    d.innerHTML = `<h2>${ic('upload', 22)} التخزين على GitHub</h2>
+      <p class="muted">الكتب والصور اللي بترفعها من اللوحة بتتحفظ على GitHub، مجانًا ومن غير حد التحميل اللي في Supabase. وبتربطه مرة واحدة بس على كل جهاز.</p>
+      <p class="store-status" data-status>جاري التأكد...</p>
+      <label class="fld"><span>مفتاح GitHub</span><input type="password" dir="ltr" data-token placeholder="github_pat_..." autocomplete="off" spellcheck="false"></label>
+      <div class="modal-acts start"><button class="btn primary" data-save>حفظ وربط</button><button class="btn" data-clear>فك الربط</button></div>
+      <details class="store-help"><summary>إزاي أعمل المفتاح؟</summary><ol class="install-steps">
+        <li>افتح <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">صفحة المفاتيح على GitHub</a> وانت داخل بحساب <b dir="ltr">${esc(C.files.owner)}</b>.</li>
+        <li>في <b>Token name</b> اكتب: لوحة الموقع. وفي <b>Expiration</b> اختار أطول مدة.</li>
+        <li>في <b>Repository access</b> اختار <b>Only select repositories</b> وبعدين المستودع <b dir="ltr">${esc(C.files.repo)}</b>.</li>
+        <li>في <b>Permissions</b> افتح <b>Repository permissions</b>، وخلي <b>Contents</b> على <b>Read and write</b>.</li>
+        <li>اضغط <b>Generate token</b>، وانسخ المفتاح والصقه في الخانة اللي فوق.</li>
+      </ol><p class="muted">المفتاح بيتحفظ على الجهاز ده بس، ومحدش غيرك يقدر يشوفه.</p></details>
+      <hr class="sep">
+      <h3>نقل الملفات القديمة</h3>
+      <p class="muted">بينقل الكتب والأغلفة وصور المقالات اللي لسه على Supabase لـ GitHub، ويغيّر روابطها في البوستات. اعمله مرة واحدة بعد الربط، وسيب الصفحة مفتوحة لحد ما يخلص.</p>
+      <button class="btn" data-migrate>${ic('upload', 18)} ابدأ النقل</button>
+      <pre class="store-log" data-log hidden></pre>
+      <div class="modal-acts"><button class="btn" data-close>قفل</button></div>`;
+    document.body.appendChild(d);
+    d.showModal();
+    d.addEventListener('close', () => d.remove());
+    const status = d.querySelector('[data-status]');
+    const logBox = d.querySelector('[data-log]');
+    const refresh = async () => {
+      status.textContent = 'جاري التأكد...';
+      const r = await S.check();
+      status.textContent = r.ok ? `✓ ${r.text}` : r.text;
+      status.classList.toggle('ok', r.ok);
+      return r.ok;
+    };
+    refresh();
+    d.querySelector('[data-close]').onclick = () => d.close();
+    d.querySelector('[data-save]').onclick = async () => {
+      const v = d.querySelector('[data-token]').value.trim();
+      if (!v) { toast('الصق المفتاح الأول', 'err'); return; }
+      S.token.set(v);
+      d.querySelector('[data-token]').value = '';
+      if (await refresh()) { toast('اتربط التخزين!', 'ok'); if (!location.hash || location.hash === '#/') showList(); }
+    };
+    d.querySelector('[data-clear]').onclick = () => { S.token.clear(); refresh(); };
+    d.querySelector('[data-migrate]').onclick = async e => {
+      const btn = e.currentTarget;
+      if (!(await refresh())) { toast('اربط التخزين الأول', 'err'); return; }
+      btn.disabled = true;
+      logBox.hidden = false;
+      logBox.textContent = '';
+      const log = line => { logBox.textContent += `${line}\n`; logBox.scrollTop = logBox.scrollHeight; };
+      try {
+        const n = await migrateOld(log);
+        log(n ? `✓ خلصنا: اتنقل ${n} ملف.` : 'مفيش ملفات على Supabase. كله على GitHub.');
+        toast('خلص النقل', 'ok');
+      } catch (err) {
+        log(`✗ ${err.message || 'حصلت مشكلة'}. اضغط "ابدأ النقل" تاني، وهيكمل من مكان ما وقف.`);
+      }
+      btn.disabled = false;
+    };
+  }
+
+  // Waits until GitHub Pages publishes a new file, so no post points to a missing file.
+  async function waitLive(url, log) {
+    for (let i = 0; i < 40; i++) {
+      try { if ((await fetch(url, { method: 'HEAD', cache: 'no-store' })).ok) return; } catch (e) {}
+      if (i === 2) log('مستني GitHub ينشر الملفات (عادة دقيقة أو اتنين)...');
+      await new Promise(r => setTimeout(r, 8000));
+    }
+    throw new Error('GitHub اتأخر في نشر الملفات');
+  }
+
+  async function migrateOld(log) {
+    const S = window.GitHubStore;
+    const pending = [];
+    let moved = 0, lastUrl = '';
+    const move = async (url, folder, label) => {
+      log(`${label}: جاري النقل...`);
+      lastUrl = await S.moveFromSupabase(url, folder);
+      moved++;
+      return lastUrl;
+    };
+    for (const p of await DB.listAll()) {
+      const full = await DB.getFull(p.id);
+      if (!full) continue;
+      let changed = false;
+      const name = full.title || 'بدون عنوان';
+      if (S.isSupabaseFile(full.cover_url)) { full.cover_url = await move(full.cover_url, 'covers', `غلاف "${name}"`); changed = true; }
+      for (const it of full.items || []) {
+        if (it.type === 'file' && S.isSupabaseFile(it.value)) {
+          it.value = await move(it.value, 'files', `ملف "${it.label || it.fileName || name}"`);
+          changed = true;
+        } else if (it.type === 'article') {
+          const urls = new Set(String(it.value).match(/https:\/\/[^\s)"'\]]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s)"'\]]+/g) || []);
+          for (const u of urls) { it.value = it.value.split(u).join(await move(u, 'articles', `صورة في "${name}"`)); changed = true; }
+        }
+      }
+      if (changed) pending.push(full);
+    }
+    if (!pending.length) return 0;
+    await waitLive(lastUrl, log);
+    for (const full of pending) {
+      await DB.savePost(full);
+      log(`✓ اتحدث "${full.title || 'بدون عنوان'}"`);
+    }
+    return moved;
   }
 
   // -------------------------------------------------------- installable app
