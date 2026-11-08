@@ -513,6 +513,19 @@ body.reading.bg-host::before { display: none; }
 .art-chip.copied { background: rgba(255, 255, 255, .16); }
 .art-extras { margin-top: 34px; padding-top: 26px; border-top: 1px solid rgba(255, 255, 255, .1); }
 
+/* storage */
+.store-note { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding: 14px 18px; border-color: rgba(255, 197, 61, .45); background: rgba(255, 197, 61, .08); color: #ffd36b; }
+.store-note span { flex: 1; min-width: 0; color: var(--text); }
+.store-note b { display: block; font-weight: 900; }
+.store-note small { display: block; color: var(--muted); font-size: 14px; }
+.store-status { margin: 10px 0; padding: 10px 14px; border-radius: 11px; background: rgba(255, 197, 61, .1); color: #ffd36b; font-weight: 800; }
+.store-status.ok { background: rgba(16, 224, 138, .12); color: var(--accent); }
+.store-help { margin-top: 12px; }
+.store-help summary { cursor: pointer; color: var(--accent); font-weight: 800; }
+.modal-acts.start { justify-content: flex-start; }
+.modal .sep { margin: 18px 0; border: 0; border-top: 1px solid var(--line); }
+.store-log { max-height: 220px; overflow: auto; margin-top: 12px; padding: 12px; background: var(--bg); border-radius: 10px; font: 600 13px/1.8 'Cairo', Tahoma, sans-serif; white-space: pre-wrap; }
+
 /* article editor */
 .art-tools { display: flex; flex-wrap: wrap; gap: 6px; }
 .art-tools button, .art-tool-img { display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-3); color: var(--text); font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
