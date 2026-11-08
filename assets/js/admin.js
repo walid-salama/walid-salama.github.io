@@ -910,13 +910,16 @@
     throw new Error('GitHub اتأخر في نشر الملفات');
   }
 
+  // Saves each post as soon as its own files are moved, so a stop half way keeps
+  // everything done so far, and pressing the button again carries on from there.
   async function migrateOld(log) {
     const S = window.GitHubStore;
-    const pending = [];
     let moved = 0, lastUrl = '';
     const move = async (url, folder, label) => {
       log(`${label}: جاري النقل...`);
-      lastUrl = await S.moveFromSupabase(url, folder);
+      lastUrl = await S.moveFromSupabase(url, folder, (d, t) => {
+        if (t > 3 * 1048576 && d === t) log(`   اترفع ${(t / 1048576).toFixed(1)} ميجا، بيتحفظ على GitHub...`);
+      });
       moved++;
       return lastUrl;
     };
@@ -935,14 +938,12 @@
           for (const u of urls) { it.value = it.value.split(u).join(await move(u, 'articles', `صورة في "${name}"`)); changed = true; }
         }
       }
-      if (changed) pending.push(full);
+      if (changed) {
+        await DB.savePost(full);
+        log(`✓ اتنقل "${name}"`);
+      }
     }
-    if (!pending.length) return 0;
-    await waitLive(lastUrl, log);
-    for (const full of pending) {
-      await DB.savePost(full);
-      log(`✓ اتحدث "${full.title || 'بدون عنوان'}"`);
-    }
+    if (lastUrl) await waitLive(lastUrl, log);
     return moved;
   }
 
