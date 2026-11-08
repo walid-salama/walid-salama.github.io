@@ -6,7 +6,7 @@
   const R = C.files;
   const API = `https://api.github.com/repos/${R.owner}/${R.repo}`;
   const KEY = 'miftah_gh_token';
-  const MAX_BYTES = 95 * 1024 * 1024; // GitHub refuses single files over 100 MB.
+  const MAX_BYTES = 200 * 1024 * 1024; // big files are stored in pieces, see upload()
 
   const token = {
     get() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } },
@@ -49,18 +49,18 @@
     r.readAsDataURL(file);
   });
 
-  // Adds one file to the repository as a new commit. Two uploads at the same moment can
+  // Adds files to the repository as one new commit. Two uploads at the same moment can
   // race for the branch, so it retries from the latest state.
-  async function commitFile(path, blobSha) {
+  async function commitFiles(entries, message) {
     for (let attempt = 0; attempt < 8; attempt++) {
       try {
         const ref = await gh('GET', `/git/ref/heads/${R.branch}`);
         const parent = await gh('GET', `/git/commits/${ref.object.sha}`);
         const tree = await gh('POST', '/git/trees', {
           base_tree: parent.tree.sha,
-          tree: [{ path, mode: '100644', type: 'blob', sha: blobSha }],
+          tree: entries.map(e => ({ path: e.path, mode: '100644', type: 'blob', sha: e.sha })),
         });
-        const commit = await gh('POST', '/git/commits', { message: `Add ${path}`, tree: tree.sha, parents: [ref.object.sha] });
+        const commit = await gh('POST', '/git/commits', { message, tree: tree.sha, parents: [ref.object.sha] });
         await gh('PATCH', `/git/refs/heads/${R.branch}`, { sha: commit.sha });
         return;
       } catch (e) {
@@ -78,33 +78,64 @@
     return 'تعذر رفع الملف على GitHub. حاول تاني.';
   }
 
+  // Sends one piece of a file to GitHub and returns its id. A piece can be refused once
+  // for no lasting reason, so it gets a few more tries.
+  async function sendBlob(blob, onProgress) {
+    const content = await base64Of(blob);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        // The encoded piece is about a third larger, so progress follows the request.
+        const res = await gh('POST', '/git/blobs', { content, encoding: 'base64' },
+          onProgress ? (d, t) => onProgress(Math.round((d / t) * blob.size)) : null);
+        return res.sha;
+      } catch (e) {
+        if (attempt >= 3 || !(e.status >= 500 || e.status === 401 || e.message === 'network')) throw e;
+        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+      }
+    }
+  }
+
+  // GitHub refuses big files sent from a web page, so anything over PART_BYTES is stored as
+  // numbered pieces next to a manifest.json that lists them. The visitor's page joins the
+  // pieces back into one file when downloading (assets/js/link.js, fetchParts).
+  const PART_BYTES = 3 * 1024 * 1024;
+
   async function upload(file, folder, onProgress) {
     if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.');
-    if (file.size > MAX_BYTES) throw new Error('الحد الأقصى لحجم الملف 95 ميجا.');
+    if (file.size > MAX_BYTES) throw new Error('الحد الأقصى لحجم الملف 200 ميجا.');
     const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
     const rand = Math.random().toString(36).slice(2, 10);
-    const path = `${R.dir ? `${R.dir}/` : ''}${folder}/${Date.now().toString(36)}-${rand}${ext}`;
+    const id = `${Date.now().toString(36)}-${rand}`;
+    const dir = `${R.dir ? `${R.dir}/` : ''}${folder}`;
+    const report = done => { if (onProgress) onProgress(Math.min(done, file.size), file.size); };
     try {
-      const content = await base64Of(file);
-      // The encoded file is about a third larger than the file, so progress follows the request.
-      // A big upload can be refused once for no lasting reason, so it gets a second try.
-      let blob;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          blob = await gh('POST', '/git/blobs', { content, encoding: 'base64' },
-            onProgress ? (d, t) => onProgress(Math.min(file.size, Math.round((d / t) * file.size)), file.size) : null);
-          break;
-        } catch (e) {
-          if (attempt >= 1 || !(e.status >= 500 || e.status === 401 || e.message === 'network')) throw e;
-          await new Promise(r => setTimeout(r, 3000));
-        }
+      if (file.size <= PART_BYTES) {
+        const path = `${dir}/${id}${ext}`;
+        const sha = await sendBlob(file, report);
+        await commitFiles([{ path, sha }], `Add ${path}`);
+        return `${R.base}/${path}`;
       }
-      await commitFile(path, blob.sha);
+      const entries = [];
+      const parts = [];
+      let sent = 0;
+      for (let start = 0, n = 1; start < file.size; start += PART_BYTES, n++) {
+        const piece = file.slice(start, start + PART_BYTES);
+        const name = `part-${String(n).padStart(3, '0')}`;
+        const sha = await sendBlob(piece, d => report(sent + d));
+        sent += piece.size;
+        report(sent);
+        parts.push(name);
+        entries.push({ path: `${dir}/${id}/${name}`, sha });
+      }
+      const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
+      const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+      entries.push({ path: `${dir}/${id}/manifest.json`, sha: manifestSha });
+      await commitFiles(entries, `Add ${dir}/${id} (${parts.length} parts)`);
+      return `${R.base}/${dir}/${id}/manifest.json`;
     } catch (e) {
       const text = e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e));
       throw new Error(e.detail ? `${text} (${e.detail})` : text);
     }
-    return `${R.base}/${path}`;
   }
 
   // Checks the key: it must reach the repository and be allowed to write to it.

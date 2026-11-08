@@ -248,6 +248,26 @@
     }
   }
 
+  // A big file is stored as pieces listed in a manifest.json (assets/js/storage.js).
+  // Downloads each piece in turn, carrying on after drops, and joins them into one file.
+  async function fetchParts(url, onProgress) {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('manifest');
+    const m = await res.json();
+    const base = url.replace(/manifest\.json(\?.*)?$/, '');
+    const pieces = [];
+    let done = 0;
+    for (const p of m.parts) {
+      const piece = await fetchResumable(base + p, got => onProgress(done + got, m.size));
+      pieces.push(piece);
+      done += piece.size;
+      onProgress(done, m.size);
+    }
+    if (m.size && done !== m.size) throw new Error('incomplete');
+    return new Blob(pieces, { type: m.type || 'application/octet-stream' });
+  }
+  const isParts = url => /\/manifest\.json(\?|$)/.test(String(url || ''));
+
   // Downloads inside the page so the visitor sees exactly how far it got.
   async function downloadFile(card, item) {
     if (card.dataset.busy) return;
@@ -268,10 +288,12 @@
       if (item.value.startsWith('data:')) { card.removeAttribute('data-act'); card.click(); return; }
       // In-app browsers often can't save a file made in the page, so they get the direct link,
       // which the phone's own downloader handles.
-      if (inApp || !window.ReadableStream || !window.AbortController) { location.href = card.href; return; }
+      // A file kept in pieces can only be put together here, so it never takes the direct link.
+      const pieces = isParts(item.value);
+      if (!pieces && (inApp || !window.ReadableStream || !window.AbortController)) { location.href = card.href; return; }
       bar.hidden = false;
       show(0, 0);
-      const blob = await fetchResumable(item.value, show);
+      const blob = pieces ? await fetchParts(item.value, show) : await fetchResumable(item.value, show);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -284,11 +306,13 @@
       btn.innerHTML = `${window.uiIcon('check', 18)} تم`;
       setTimeout(() => { text.textContent = original; btn.innerHTML = originalBtn; bar.hidden = true; }, 5000);
     } catch (e) {
-      // Direct link as a fallback, so the visitor still gets the file.
       text.textContent = original;
       btn.innerHTML = originalBtn;
       bar.hidden = true;
-      location.href = card.href;
+      // Direct link as a fallback, so the visitor still gets the file. Pieces have no
+      // direct link, so the visitor is told to try again, or to use Chrome.
+      if (isParts(item.value)) window.toast(inApp ? 'افتح الرابط في Chrome علشان تحمّل الملف.' : 'التحميل اتقطع. اضغط تحميل تاني.', 'err');
+      else location.href = card.href;
     } finally {
       delete card.dataset.busy;
     }
