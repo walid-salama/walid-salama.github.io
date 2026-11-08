@@ -30,7 +30,12 @@
         let data = null;
         try { data = JSON.parse(xhr.responseText || 'null'); } catch (e) {}
         if (xhr.status >= 200 && xhr.status < 300) res(data);
-        else { const err = new Error(`github_${xhr.status}`); err.status = xhr.status; rej(err); }
+        else {
+          const err = new Error(`github_${xhr.status}`);
+          err.status = xhr.status;
+          err.detail = `${method} ${path.split('?')[0]} → ${xhr.status} ${(data && data.message) || ''}`.trim();
+          rej(err);
+        }
       };
       xhr.onerror = () => rej(new Error('network'));
       xhr.send(body ? JSON.stringify(body) : null);
@@ -82,11 +87,22 @@
     try {
       const content = await base64Of(file);
       // The encoded file is about a third larger than the file, so progress follows the request.
-      const blob = await gh('POST', '/git/blobs', { content, encoding: 'base64' },
-        onProgress ? (d, t) => onProgress(Math.min(file.size, Math.round((d / t) * file.size)), file.size) : null);
+      // A big upload can be refused once for no lasting reason, so it gets a second try.
+      let blob;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          blob = await gh('POST', '/git/blobs', { content, encoding: 'base64' },
+            onProgress ? (d, t) => onProgress(Math.min(file.size, Math.round((d / t) * file.size)), file.size) : null);
+          break;
+        } catch (e) {
+          if (attempt >= 1 || !(e.status >= 500 || e.status === 401 || e.message === 'network')) throw e;
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
       await commitFile(path, blob.sha);
     } catch (e) {
-      throw new Error(e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e)));
+      const text = e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e));
+      throw new Error(e.detail ? `${text} (${e.detail})` : text);
     }
     return `${R.base}/${path}`;
   }
