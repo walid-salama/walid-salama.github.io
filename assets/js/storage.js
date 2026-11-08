@@ -18,7 +18,10 @@
   function gh(method, path, body, onProgress) {
     return new Promise((res, rej) => {
       const xhr = new XMLHttpRequest();
-      xhr.open(method, API + path);
+      // GitHub lets browsers keep its answers for a minute. A stale branch tip makes the
+      // next commit fail, so every read asks for a fresh copy.
+      const fresh = method === 'GET' ? `${path.includes('?') ? '&' : '?'}_=${Date.now()}` : '';
+      xhr.open(method, API + path + fresh);
       xhr.setRequestHeader('Authorization', `Bearer ${token.get()}`);
       xhr.setRequestHeader('Accept', 'application/vnd.github+json');
       if (body) xhr.setRequestHeader('Content-Type', 'application/json');
@@ -44,7 +47,7 @@
   // Adds one file to the repository as a new commit. Two uploads at the same moment can
   // race for the branch, so it retries from the latest state.
   async function commitFile(path, blobSha) {
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
       try {
         const ref = await gh('GET', `/git/ref/heads/${R.branch}`);
         const parent = await gh('GET', `/git/commits/${ref.object.sha}`);
