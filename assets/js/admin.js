@@ -8,7 +8,7 @@
   // Short link: 404.html turns /my-link into the post page.
   const linkFor = slug => new URL(encodeURIComponent(slug), new URL('./', location.href)).href;
   // These names already belong to real pages, so they can't be used as short links.
-  const RESERVED_SLUGS = ['index', 'link', 'admin', '404', 'assets', 'supabase', 'readme'];
+  const RESERVED_SLUGS = ['index', 'link', 'admin', '404', 'assets', 'supabase', 'readme', 'files', 'functions'];
   const googleReady = () => DB.isDemo || !!C.googleClientId;
   const newId = () => Math.random().toString(36).slice(2, 10);
 

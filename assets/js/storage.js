@@ -1,5 +1,5 @@
-// Dashboard only: keeps books and pictures on GitHub (the "files" repository, published by
-// GitHub Pages) instead of Supabase Storage, whose free plan allows only 5 GB of downloads a
+// Dashboard only: keeps books and pictures on GitHub (the files/ folder of the site's
+// repository, published by GitHub Pages) instead of Supabase Storage, whose free plan allows only 5 GB of downloads a
 // month. The owner connects once with a GitHub key kept in this browser only.
 (function () {
   const C = window.SITE_CONFIG;
@@ -65,7 +65,7 @@
 
   function friendly(e) {
     if (e.status === 401) return 'مفتاح GitHub غير صحيح أو انتهت صلاحيته. اربطه تاني من زرار "التخزين".';
-    if (e.status === 403 || e.status === 404) return 'المفتاح مالوش صلاحية الكتابة على مستودع files. راجع خطوات الربط.';
+    if (e.status === 403 || e.status === 404) return 'المفتاح مالوش صلاحية الكتابة على مستودع الموقع. راجع خطوات الربط.';
     if (e.message === 'network') return 'انقطع الاتصال أثناء الرفع. حاول تاني.';
     return 'تعذر رفع الملف على GitHub. حاول تاني.';
   }
@@ -75,7 +75,7 @@
     if (file.size > MAX_BYTES) throw new Error('الحد الأقصى لحجم الملف 95 ميجا.');
     const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
     const rand = Math.random().toString(36).slice(2, 10);
-    const path = `${folder}/${Date.now().toString(36)}-${rand}${ext}`;
+    const path = `${R.dir ? `${R.dir}/` : ''}${folder}/${Date.now().toString(36)}-${rand}${ext}`;
     try {
       const content = await base64Of(file);
       // The encoded file is about a third larger than the file, so progress follows the request.

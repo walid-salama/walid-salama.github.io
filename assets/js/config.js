@@ -15,8 +15,10 @@ window.SITE_CONFIG = {
   // Seconds a step stays on "جاري التحقق" after its button is pressed, then it completes.
   checkSeconds: 15,
 
-  // Where the dashboard keeps books and pictures: a GitHub repository published by GitHub Pages.
-  files: { owner: 'walid-salama', repo: 'files', branch: 'main', base: 'https://walid-salama.github.io/files' },
+  // Where the dashboard keeps books and pictures: the "files" folder of this site's own
+  // repository, published by GitHub Pages. Cloudflare skips that folder (its build command
+  // removes it), since it refuses files over 25 MB.
+  files: { owner: 'walid-salama', repo: 'walid-salama.github.io', branch: 'main', dir: 'files', base: 'https://walid-salama.github.io' },
 
   bio: 'منشئ محتوى فيديو. كتب وأدوات وبرومبتات مجانية، تفتحها بخطوة واحدة.',
   // Shown on the home page. p picks the icon and color from PLATFORMS in actions.js.
