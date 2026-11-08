@@ -6,8 +6,10 @@ window.SITE_CONFIG = {
   tagline: 'كل المحتوى الحصري في مكان واحد',
   defaultChannel: '@Abu-Hanin',
 
-  supabaseUrl: 'https://jyrcywuxqfandzerlrga.supabase.co',
-  supabaseAnonKey: 'sb_publishable_4tt3LWss6QhyskTBnM7aCA_Aq4kw1c8',
+  // Project "miftah2" in the "walid-salama" organization (moved 2026-11-08: the first
+  // project's organization went over the free download quota).
+  supabaseUrl: 'https://hhqxhdgylnjxkqqcowxk.supabase.co',
+  supabaseAnonKey: 'sb_publishable_3-Tu5PJFN7GGG8uNZmCiXw_deTsgfgh',
   googleClientId: '',
 
   // Seconds a step stays on "جاري التحقق" after its button is pressed, then it completes.
