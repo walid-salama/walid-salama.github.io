@@ -99,6 +99,7 @@
   // numbered pieces next to a manifest.json that lists them. The visitor's page joins the
   // pieces back into one file when downloading (assets/js/link.js, fetchParts).
   const PART_BYTES = 3 * 1024 * 1024;
+  const PARALLEL = 4;
 
   async function upload(file, folder, onProgress) {
     if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.');
@@ -115,18 +116,25 @@
         await commitFiles([{ path, sha }], `Add ${path}`);
         return `${R.base}/${path}`;
       }
-      const entries = [];
+      // Pieces go up a few at a time, which is several times faster than one by one.
+      const count = Math.ceil(file.size / PART_BYTES);
       const parts = [];
-      let sent = 0;
-      for (let start = 0, n = 1; start < file.size; start += PART_BYTES, n++) {
-        const piece = file.slice(start, start + PART_BYTES);
-        const name = `part-${String(n).padStart(3, '0')}`;
-        const sha = await sendBlob(piece, d => report(sent + d));
-        sent += piece.size;
-        report(sent);
-        parts.push(name);
-        entries.push({ path: `${dir}/${id}/${name}`, sha });
-      }
+      const entries = new Array(count);
+      const progress = new Array(count).fill(0);
+      const total = () => progress.reduce((a, b) => a + b, 0);
+      for (let n = 1; n <= count; n++) parts.push(`part-${String(n).padStart(3, '0')}`);
+      let next = 0;
+      const worker = async () => {
+        while (next < count) {
+          const i = next++;
+          const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
+          const sha = await sendBlob(piece, d => { progress[i] = d; report(total()); });
+          progress[i] = piece.size;
+          report(total());
+          entries[i] = { path: `${dir}/${id}/${parts[i]}`, sha };
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
       const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
       const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
       entries.push({ path: `${dir}/${id}/manifest.json`, sha: manifestSha });

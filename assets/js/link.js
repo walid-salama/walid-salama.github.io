@@ -255,14 +255,23 @@
     if (!res.ok) throw new Error('manifest');
     const m = await res.json();
     const base = url.replace(/manifest\.json(\?.*)?$/, '');
-    const pieces = [];
-    let done = 0;
-    for (const p of m.parts) {
-      const piece = await fetchResumable(base + p, got => onProgress(done + got, m.size));
-      pieces.push(piece);
-      done += piece.size;
-      onProgress(done, m.size);
-    }
+    // Four pieces at a time: much faster than one by one, and still kind to slow phones.
+    const pieces = new Array(m.parts.length);
+    const got = new Array(m.parts.length).fill(0);
+    const sum = () => got.reduce((a, b) => a + b, 0);
+    let next = 0;
+    const worker = async () => {
+      while (next < m.parts.length) {
+        const i = next++;
+        pieces[i] = await fetchResumable(base + m.parts[i], g => { got[i] = g; onProgress(sum(), m.size); });
+        got[i] = pieces[i].size;
+        onProgress(sum(), m.size);
+      }
+    };
+    const workers = [];
+    for (let w = 0; w < Math.min(4, m.parts.length); w++) workers.push(worker());
+    await Promise.all(workers);
+    const done = sum();
     if (m.size && done !== m.size) throw new Error('incomplete');
     return new Blob(pieces, { type: m.type || 'application/octet-stream' });
   }
