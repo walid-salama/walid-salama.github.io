@@ -900,51 +900,55 @@
     };
   }
 
-  // Waits until GitHub Pages publishes a new file, so no post points to a missing file.
-  async function waitLive(url, log) {
-    for (let i = 0; i < 40; i++) {
-      try { if ((await fetch(url, { method: 'HEAD', cache: 'no-store' })).ok) return; } catch (e) {}
-      if (i === 2) log('مستني GitHub ينشر الملفات (عادة دقيقة أو اتنين)...');
-      await new Promise(r => setTimeout(r, 8000));
-    }
-    throw new Error('GitHub اتأخر في نشر الملفات');
-  }
-
-  // Saves each post as soon as its own files are moved, so a stop half way keeps
-  // everything done so far, and pressing the button again carries on from there.
+  // GitHub's own servers download the old files (.github/workflows/move-files.yml), so
+  // nothing goes through the owner's connection; then each post is pointed at its copy.
+  const OLD_URL_RE = /https:\/\/[^\s)"'\]<>]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s)"'\]<>]+/g;
   async function migrateOld(log) {
     const S = window.GitHubStore;
-    let moved = 0, lastUrl = '';
-    const move = async (url, folder, label) => {
-      log(`${label}: جاري النقل...`);
-      lastUrl = await S.moveFromSupabase(url, folder, (d, t) => {
-        if (t > 3 * 1048576 && d === t) log(`   اترفع ${(t / 1048576).toFixed(1)} ميجا، بيتحفظ على GitHub...`);
-      });
-      moved++;
-      return lastUrl;
-    };
+    const posts = [];
+    const urls = new Set();
+    log('بجمع الملفات القديمة...');
     for (const p of await DB.listAll()) {
       const full = await DB.getFull(p.id);
       if (!full) continue;
-      let changed = false;
-      const name = full.title || 'بدون عنوان';
-      if (S.isSupabaseFile(full.cover_url)) { full.cover_url = await move(full.cover_url, 'covers', `غلاف "${name}"`); changed = true; }
+      const found = new Set();
+      if (S.isSupabaseFile(full.cover_url)) found.add(full.cover_url);
       for (const it of full.items || []) {
-        if (it.type === 'file' && S.isSupabaseFile(it.value)) {
-          it.value = await move(it.value, 'files', `ملف "${it.label || it.fileName || name}"`);
-          changed = true;
-        } else if (it.type === 'article') {
-          const urls = new Set(String(it.value).match(/https:\/\/[^\s)"'\]]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s)"'\]]+/g) || []);
-          for (const u of urls) { it.value = it.value.split(u).join(await move(u, 'articles', `صورة في "${name}"`)); changed = true; }
-        }
+        if (it.type === 'file' && S.isSupabaseFile(it.value)) found.add(it.value);
+        else if (it.type === 'article') (String(it.value).match(OLD_URL_RE) || []).forEach(u => found.add(u));
       }
-      if (changed) {
-        await DB.savePost(full);
-        log(`✓ اتنقل "${name}"`);
-      }
+      if (found.size) { posts.push({ full, found }); found.forEach(u => urls.add(u)); }
     }
-    if (lastUrl) await waitLive(lastUrl, log);
-    return moved;
+    if (!urls.size) return 0;
+    const list = [...urls];
+    log(`${list.length} ملف قديم في ${posts.length} بوست. GitHub بينقلهم بنفسه دلوقتي...`);
+    await S.askCloudMove(list);
+
+    // Waits until every copy answers on the site (the move plus publishing takes a few minutes).
+    const pending = new Set(list);
+    const started = Date.now();
+    let shown = -1;
+    while (pending.size) {
+      if (Date.now() - started > 25 * 60 * 1000) throw new Error('GitHub اتأخر في النقل. اضغط "ابدأ النقل" تاني بعد شوية.');
+      for (const u of [...pending]) {
+        try { if ((await fetch(S.movedAddress(u), { method: 'HEAD', cache: 'no-store' })).ok) pending.delete(u); } catch (e) {}
+      }
+      const ready = list.length - pending.size;
+      if (ready !== shown) { log(`   جاهز ${ready} من ${list.length}`); shown = ready; }
+      if (pending.size) await new Promise(r => setTimeout(r, 10000));
+    }
+
+    for (const { full, found } of posts) {
+      const swap = v => { let out = String(v); found.forEach(u => { out = out.split(u).join(S.movedAddress(u)); }); return out; };
+      if (found.has(full.cover_url)) full.cover_url = S.movedAddress(full.cover_url);
+      for (const it of full.items || []) {
+        if (it.type === 'file' && found.has(it.value)) it.value = S.movedAddress(it.value);
+        else if (it.type === 'article') it.value = swap(it.value);
+      }
+      await DB.savePost(full);
+      log(`✓ اتنقل "${full.title || 'بدون عنوان'}"`);
+    }
+    return list.length;
   }
 
   // -------------------------------------------------------- installable app
