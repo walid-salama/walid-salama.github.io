@@ -16,6 +16,7 @@
   let filter = 'all';
   let posts = [];
   let draft = null;
+  let keyChecked = false;
 
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
@@ -76,11 +77,12 @@
     const FILTERS = [['all', 'الكل'], ['public', 'عام'], ['private', 'خاص'], ['draft', 'مسودات']];
     const STATUS = { public: 'عام', private: 'خاص', draft: 'مسودة' };
 
-    const needsStore = !DB.isDemo && window.GitHubStore && !window.GitHubStore.ready();
+    const S = !DB.isDemo && window.GitHubStore;
+    const storeNote = text => `<div class="card store-note">${ic('upload', 22)}
+        <span><b>الرفع مش مربوط على الجهاز ده</b><small>${esc(text)}</small></span>
+        <button class="btn primary sm" data-act="storage">اربط دلوقتي</button></div>`;
     app.innerHTML = `
-      ${needsStore ? `<div class="card store-note">${ic('upload', 22)}
-        <span><b>اربط التخزين على GitHub</b><small>علشان ترفع الكتب والصور من اللوحة من غير ما تستهلك حد Supabase المجاني.</small></span>
-        <button class="btn primary sm" data-act="storage">اربط دلوقتي</button></div>` : ''}
+      ${S && !S.ready() ? storeNote('اربطه مرة واحدة علشان ترفع الكتب والصور من اللوحة.') : ''}
       <div class="page-head">
         <h1>${ic('unlock', 30)} روابط الفتح</h1>
         <a class="btn primary" href="#/new">${ic('plus', 20)} رابط جديد</a>
@@ -117,6 +119,15 @@
           </div>`;
         }).join('') || `<div class="empty-state">${ic('lock', 40)}<h2>لا توجد روابط هنا</h2><p>اعمل أول رابط واجمع مشتركين جدد.</p><a class="btn primary" href="#/new">${ic('plus', 18)} رابط جديد</a></div>`}
       </div>`;
+
+    // A saved key can expire or be deleted on GitHub: checked once per visit, so the owner
+    // hears about it here and not in the middle of an upload.
+    if (S && S.ready() && !keyChecked) {
+      keyChecked = true;
+      S.check().then(r => {
+        if (!r.ok && !app.querySelector('.store-note')) app.insertAdjacentHTML('afterbegin', storeNote(r.text));
+      });
+    }
 
     app.onclick = async e => {
       const f = e.target.closest('[data-filter]');
@@ -349,12 +360,13 @@
 
   async function uploadCover(file) {
     if (!file || !file.type.startsWith('image/')) { toast('اختار ملف صورة', 'err'); return; }
+    if (!storeReady()) return;
     uploads.cover = { done: 0, total: file.size };
     renderCover();
     try {
       draft.cover_url = await DB.upload(file, 'covers', (d, t) => updateBar('cover', d, t));
       touch();
-    } catch (e) { toast(e.message || 'تعذر رفع الصورة', 'err'); }
+    } catch (e) { uploadFailed(e, 'تعذر رفع الصورة'); }
     delete uploads.cover;
     renderCover();
   }
@@ -437,6 +449,7 @@
     const files = picked.filter(f => f.type.startsWith('image/'))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (!files.length) { toast('اختار ملف صورة', 'err'); return; }
+    if (!storeReady()) return;
     const status = ta.parentElement.querySelector('[data-art-status]');
     const key = `art-${newId()}`;
     const cursor = ta.selectionStart;
@@ -450,7 +463,7 @@
           status.textContent = window.progressInfo(`جاري رفع الصورة${counter}`, d, t).text;
         }));
       }
-    } catch (err) { toast(err.message || 'تعذر رفع الصورة', 'err'); }
+    } catch (err) { uploadFailed(err, 'تعذر رفع الصورة'); }
     if (urls.length) {
       ta.setSelectionRange(cursor, cursor);
       insertAtCursor(ta, `\n${urls.map(u => `![](${u})`).join('\n')}\n`);
@@ -650,6 +663,7 @@
     // Puts a book in the release, from the device or from a link (DB.importFile).
     async function importItemFile(it, source) {
       const isLink = typeof source === 'string';
+      if (!storeReady()) return;
       uploads[it.id] = { done: 0, total: isLink ? 0 : source.size, note: isLink ? 'بيبعت الرابط لـ GitHub...' : '' };
       renderItems();
       try {
@@ -661,7 +675,7 @@
         if (!it.label) it.label = it.fileName.replace(/\.[^.]+$/, '');
         touch();
         toast('الملف جاهز. متنساش تحفظ البوست.', 'ok');
-      } catch (err) { toast(err.message || 'تعذر رفع الملف', 'err'); }
+      } catch (err) { uploadFailed(err, 'تعذر رفع الملف'); }
       delete uploads[it.id];
       renderItems();
     }
@@ -854,12 +868,19 @@
     out.innerHTML = `${ic('logout', 18)} خروج`;
     out.onclick = async () => { await DB.signOut(); location.reload(); };
     document.getElementById('demoBar').hidden = !DB.isDemo;
-    const store = document.getElementById('storageBtn');
-    if (store && !DB.isDemo && session) {
-      store.hidden = false;
-      store.innerHTML = `${ic('upload', 18)} التخزين`;
-      store.onclick = openStorage;
-    }
+  }
+
+  // Uploads need the GitHub key on this device. Without it (a new phone, or an expired
+  // key) the connect screen opens by itself instead of the upload failing.
+  function storeReady() {
+    if (DB.isDemo || !window.GitHubStore || window.GitHubStore.ready()) return true;
+    openStorage();
+    return false;
+  }
+  const keyProblem = err => /GitHub غير صحيح|مالوش صلاحية|اربط التخزين/.test(String(err && err.message));
+  function uploadFailed(err, fallback) {
+    toast(err.message || fallback, 'err');
+    if (keyProblem(err)) openStorage();
   }
 
   // ---------------------------------------------------------------- storage
@@ -869,8 +890,8 @@
     const S = window.GitHubStore;
     const d = document.createElement('dialog');
     d.className = 'modal';
-    d.innerHTML = `<h2>${ic('upload', 22)} التخزين على GitHub</h2>
-      <p class="muted">الكتب والصور اللي بترفعها من اللوحة بتتحفظ على GitHub، مجانًا ومن غير حد التحميل اللي في Supabase. وبتربطه مرة واحدة بس على كل جهاز.</p>
+    d.innerHTML = `<h2>${ic('upload', 22)} ربط الرفع على GitHub</h2>
+      <p class="muted">الكتب والصور بتترفع على GitHub لوحدها. الجهاز ده محتاج يتربط مرة واحدة بس، وبعد كده مش هتشوف الشاشة دي تاني.</p>
       <p class="store-status" data-status>جاري التأكد...</p>
       <label class="fld"><span>مفتاح GitHub</span><input type="password" dir="ltr" data-token placeholder="github_pat_..." autocomplete="off" spellcheck="false"></label>
       <div class="modal-acts start"><button class="btn primary" data-save>حفظ وربط</button><button class="btn" data-clear>فك الربط</button></div>
@@ -881,17 +902,11 @@
         <li>في <b>Permissions</b> افتح <b>Repository permissions</b>، وخلي <b>Contents</b> على <b>Read and write</b>.</li>
         <li>اضغط <b>Generate token</b>، وانسخ المفتاح والصقه في الخانة اللي فوق.</li>
       </ol><p class="muted">المفتاح بيتحفظ على الجهاز ده بس، ومحدش غيرك يقدر يشوفه.</p></details>
-      <hr class="sep">
-      <h3>نقل الملفات القديمة</h3>
-      <p class="muted">بينقل الكتب والأغلفة وصور المقالات اللي لسه على Supabase لـ GitHub، ويغيّر روابطها في البوستات. اعمله مرة واحدة بعد الربط، وسيب الصفحة مفتوحة لحد ما يخلص.</p>
-      <button class="btn" data-migrate>${ic('upload', 18)} ابدأ النقل</button>
-      <pre class="store-log" data-log hidden></pre>
       <div class="modal-acts"><button class="btn" data-close>قفل</button></div>`;
     document.body.appendChild(d);
     d.showModal();
     d.addEventListener('close', () => d.remove());
     const status = d.querySelector('[data-status]');
-    const logBox = d.querySelector('[data-log]');
     const refresh = async () => {
       status.textContent = 'جاري التأكد...';
       const r = await S.check();
@@ -906,76 +921,9 @@
       if (!v) { toast('الصق المفتاح الأول', 'err'); return; }
       S.token.set(v);
       d.querySelector('[data-token]').value = '';
-      if (await refresh()) { toast('اتربط التخزين!', 'ok'); if (!location.hash || location.hash === '#/') showList(); }
+      if (await refresh()) { toast('اتربط! الرفع بقى شغال على الجهاز ده.', 'ok'); d.close(); if (!location.hash || location.hash === '#/') showList(); }
     };
     d.querySelector('[data-clear]').onclick = () => { S.token.clear(); refresh(); };
-    d.querySelector('[data-migrate]').onclick = async e => {
-      const btn = e.currentTarget;
-      if (!(await refresh())) { toast('اربط التخزين الأول', 'err'); return; }
-      btn.disabled = true;
-      logBox.hidden = false;
-      logBox.textContent = '';
-      const log = line => { logBox.textContent += `${line}\n`; logBox.scrollTop = logBox.scrollHeight; };
-      try {
-        const n = await migrateOld(log);
-        log(n ? `✓ خلصنا: اتنقل ${n} ملف.` : 'مفيش ملفات على Supabase. كله على GitHub.');
-        toast('خلص النقل', 'ok');
-      } catch (err) {
-        log(`✗ ${err.message || 'حصلت مشكلة'}. اضغط "ابدأ النقل" تاني، وهيكمل من مكان ما وقف.`);
-      }
-      btn.disabled = false;
-    };
-  }
-
-  // GitHub's own servers download the old files (.github/workflows/move-files.yml), so
-  // nothing goes through the owner's connection; then each post is pointed at its copy.
-  const OLD_URL_RE = /https:\/\/[^\s)"'\]<>]+\.supabase\.co\/storage\/v1\/object\/public\/[^\s)"'\]<>]+/g;
-  async function migrateOld(log) {
-    const S = window.GitHubStore;
-    const posts = [];
-    const urls = new Set();
-    log('بجمع الملفات القديمة...');
-    for (const p of await DB.listAll()) {
-      const full = await DB.getFull(p.id);
-      if (!full) continue;
-      const found = new Set();
-      if (S.isSupabaseFile(full.cover_url)) found.add(full.cover_url);
-      for (const it of full.items || []) {
-        if (it.type === 'file' && S.isSupabaseFile(it.value)) found.add(it.value);
-        else if (it.type === 'article') (String(it.value).match(OLD_URL_RE) || []).forEach(u => found.add(u));
-      }
-      if (found.size) { posts.push({ full, found }); found.forEach(u => urls.add(u)); }
-    }
-    if (!urls.size) return 0;
-    const list = [...urls];
-    log(`${list.length} ملف قديم في ${posts.length} بوست. GitHub بينقلهم بنفسه دلوقتي...`);
-    await S.askCloudMove(list);
-
-    // Waits until every copy answers on the site (the move plus publishing takes a few minutes).
-    const pending = new Set(list);
-    const started = Date.now();
-    let shown = -1;
-    while (pending.size) {
-      if (Date.now() - started > 25 * 60 * 1000) throw new Error('GitHub اتأخر في النقل. اضغط "ابدأ النقل" تاني بعد شوية.');
-      for (const u of [...pending]) {
-        try { if ((await fetch(S.movedAddress(u), { method: 'HEAD', cache: 'no-store' })).ok) pending.delete(u); } catch (e) {}
-      }
-      const ready = list.length - pending.size;
-      if (ready !== shown) { log(`   جاهز ${ready} من ${list.length}`); shown = ready; }
-      if (pending.size) await new Promise(r => setTimeout(r, 10000));
-    }
-
-    for (const { full, found } of posts) {
-      const swap = v => { let out = String(v); found.forEach(u => { out = out.split(u).join(S.movedAddress(u)); }); return out; };
-      if (found.has(full.cover_url)) full.cover_url = S.movedAddress(full.cover_url);
-      for (const it of full.items || []) {
-        if (it.type === 'file' && found.has(it.value)) it.value = S.movedAddress(it.value);
-        else if (it.type === 'article') it.value = swap(it.value);
-      }
-      await DB.savePost(full);
-      log(`✓ اتنقل "${full.title || 'بدون عنوان'}"`);
-    }
-    return list.length;
   }
 
   // -------------------------------------------------------- installable app

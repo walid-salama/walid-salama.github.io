@@ -252,31 +252,5 @@
 
   const isSupabaseFile = url => /\.supabase\.co\/storage\/v1\/object\/public\//i.test(String(url || ''));
 
-  // Moves a file that is still in Supabase Storage to GitHub, and returns its new address.
-  async function moveFromSupabase(url, folder, onProgress) {
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error('تعذر قراءة الملف القديم.');
-    const blob = await res.blob();
-    const name = decodeURIComponent(url.split('?')[0].split('/').pop() || 'file');
-    let file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
-    if (file.type.startsWith('image/')) file = await compressImage(file);
-    return upload(file, folder, onProgress);
-  }
-
-  // Where .github/workflows/move-files.yml stores an old Supabase file on GitHub.
-  function movedAddress(url) {
-    const rel = String(url).split('/storage/v1/object/public/')[1].split('?')[0];
-    const parts = rel.split('/').filter(p => p && p !== '.' && p !== '..')
-      .map(p => { try { return encodeURIComponent(decodeURIComponent(p)); } catch (e) { return encodeURIComponent(p); } });
-    return `${R.base}/${R.dir ? `${R.dir}/` : ''}old/${parts.join('/')}`;
-  }
-
-  // Hands the list of old files to GitHub, whose servers download them (see move-files.yml).
-  async function askCloudMove(urls) {
-    const text = `# ${new Date().toISOString()}\n${urls.join('\n')}\n`;
-    const sha = await sendBlob(new Blob([text], { type: 'text/plain' }));
-    await commitFiles([{ path: 'migrate/urls.txt', sha }], `Ask GitHub to move ${urls.length} old files`);
-  }
-
-  window.GitHubStore = { token, check, upload, compressImage, isSupabaseFile, moveFromSupabase, movedAddress, askCloudMove, importFile, ready: () => !!token.get() };
+  window.GitHubStore = { token, check, upload, compressImage, isSupabaseFile, importFile, ready: () => !!token.get() };
 })();
