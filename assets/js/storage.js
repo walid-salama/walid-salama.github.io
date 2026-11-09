@@ -89,8 +89,11 @@
           onProgress ? (d, t) => onProgress(Math.round((d / t) * blob.size)) : null);
         return res.sha;
       } catch (e) {
-        if (attempt >= 3 || !(e.status >= 500 || e.status === 401 || e.message === 'network')) throw e;
-        await new Promise(r => setTimeout(r, 3000 * (attempt + 1)));
+        // 401 here is GitHub dropping a slow request, not a bad key (the key is checked
+        // before anything is sent); 403 with "rate limit" means "slow down".
+        const busy = e.status === 403 && /rate limit/i.test(e.detail || '');
+        if (attempt >= 6 || !(e.status >= 500 || e.status === 401 || busy || e.message === 'network')) throw e;
+        await new Promise(r => setTimeout(r, (busy ? 20000 : 3000) * (attempt + 1)));
       }
     }
   }
@@ -98,8 +101,10 @@
   // GitHub refuses big files sent from a web page, so anything over PART_BYTES is stored as
   // numbered pieces next to a manifest.json that lists them. The visitor's page joins the
   // pieces back into one file when downloading (assets/js/link.js, fetchParts).
-  const PART_BYTES = 3 * 1024 * 1024;
-  const PARALLEL = 4;
+  // Small pieces: on a slow connection each one still finishes in well under a minute,
+  // which GitHub needs (a long upload is cut off with a false "bad credentials").
+  const PART_BYTES = 1024 * 1024;
+  const PARALLEL = 3;
 
   const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const needToken = () => { if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.'); };
@@ -201,6 +206,9 @@
     const id = newId();
     const entries = [];
     const request = { id };
+    // The key is checked first, so a refusal later in the upload is known to be passing.
+    const key = await check();
+    if (!key.ok) throw new Error(key.text);
     try {
       if (typeof source === 'string') {
         const url = source.trim();

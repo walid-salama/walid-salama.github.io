@@ -93,6 +93,8 @@
       return { ok: true, verified, pass: newPass, items: p.items || [] };
     },
     async session() { return { user: { email: 'demo' }, isAdmin: true }; },
+    async getSetting() { return ''; },
+    async setSetting() {},
     async signIn() {}, async signOut() {},
     async listAll() { return demoPosts().map(({ items, ...r }) => r); },
     async getFull(id) { const p = demoPosts().find(x => x.id === id); return p ? JSON.parse(JSON.stringify(p)) : null; },
@@ -195,6 +197,16 @@
       if (error) throw error;
     },
     signOut: () => sb().auth.signOut(),
+
+    // Owner-only settings (table admin_settings, readable by admins alone), such as the
+    // GitHub key, so every device signed in as the owner gets it without asking.
+    async getSetting(key) {
+      const rows = check(await sb().from('admin_settings').select('value').eq('key', key));
+      return rows && rows[0] ? rows[0].value : '';
+    },
+    async setSetting(key, value) {
+      check(await sb().from('admin_settings').upsert({ key, value, updated_at: new Date().toISOString() }));
+    },
 
     async listAll() {
       return check(await sb().from('posts').select('*').order('created_at', { ascending: false }));

@@ -885,10 +885,18 @@
     openStorage();
     return false;
   }
+  // GitHub sometimes refuses one slow upload with "bad credentials" although the key is
+  // fine, so the connect screen only opens after the key itself fails a fresh check.
   const keyProblem = err => /GitHub غير صحيح|مالوش صلاحية|اربط التخزين/.test(String(err && err.message));
-  function uploadFailed(err, fallback) {
+  async function uploadFailed(err, fallback) {
+    if (keyProblem(err) && window.GitHubStore) {
+      await syncKey();
+      const r = await window.GitHubStore.check();
+      if (!r.ok && !/انقطع/.test(r.text)) { toast(r.text, 'err'); openStorage(); return; }
+      toast('النت فصل أثناء الرفع. اختار الملف تاني وهيترفع.', 'err');
+      return;
+    }
     toast(err.message || fallback, 'err');
-    if (keyProblem(err)) openStorage();
   }
 
   // ---------------------------------------------------------------- storage
@@ -929,7 +937,13 @@
       if (!v) { toast('الصق المفتاح الأول', 'err'); return; }
       S.token.set(v);
       d.querySelector('[data-token]').value = '';
-      if (await refresh()) { toast('اتربط! الرفع بقى شغال على الجهاز ده.', 'ok'); d.close(); if (!location.hash || location.hash === '#/') showList(); }
+      if (await refresh()) {
+        let everywhere = true;
+        try { await DB.setSetting('github_token', v); } catch (e) { everywhere = false; }
+        toast(everywhere ? 'اتربط! ومش هيطلبه تاني على أي جهاز.' : 'اتربط على الجهاز ده.', 'ok');
+        d.close();
+        if (!location.hash || location.hash === '#/') showList();
+      }
     };
     d.querySelector('[data-clear]').onclick = () => { S.token.clear(); refresh(); };
   }
@@ -993,7 +1007,21 @@
       app.innerHTML = `<div class="card empty-state">${ic('lock', 40)}<h2>الحساب ده مش مسجل كمدير</h2><p>نفّذ خطوة إضافة المدير في دليل التشغيل README.md.</p></div>`;
       return;
     }
+    await syncKey();
     route();
+  }
+
+  // The GitHub key lives with the owner's account, so a new phone or a cleared browser
+  // picks it up by itself. The account's copy is the newest: it changes whenever the key
+  // is saved on any device. A device that has a key the account lacks shares it.
+  async function syncKey() {
+    const S = window.GitHubStore;
+    if (DB.isDemo || !S) return;
+    try {
+      const saved = await DB.getSetting('github_token');
+      if (saved && saved !== S.token.get()) S.token.set(saved);
+      else if (!saved && S.ready()) await DB.setSetting('github_token', S.token.get());
+    } catch (e) { /* table missing or offline: the key on this device still works */ }
   }
   setupInstall();
   start();
