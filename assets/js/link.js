@@ -33,6 +33,15 @@
   // this tab while the visitor is away in the YouTube app.
   const started = {};
   const timers = {};
+  state.startedAt = started;
+
+  // The countdown on a checking step goes down each second without redrawing the page.
+  setInterval(() => {
+    document.querySelectorAll('[data-count]').forEach(el => {
+      const n = String(window.secondsLeft(state, el.dataset.count));
+      if (el.textContent !== n) el.textContent = n;
+    });
+  }, 250);
 
   const render = () => {
     root.innerHTML = window.renderLinkCard(post, state);

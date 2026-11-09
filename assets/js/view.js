@@ -138,6 +138,14 @@
     return `<div class="teaser"><h3>${ic('gift', 18)} هتحصل على إيه؟</h3><ul class="tz-list">${rows}</ul></div>`;
   }
 
+  // Seconds still to wait for a step pressed at s.startedAt[id] (never below 1 while waiting).
+  window.secondsLeft = (s, id) => {
+    const wait = (window.SITE_CONFIG.checkSeconds || 15) * 1000;
+    const at = s.startedAt && s.startedAt[id];
+    if (!at) return Math.round(wait / 1000);
+    return Math.max(1, Math.ceil((wait - (Date.now() - at)) / 1000));
+  };
+
   function stepHtml(step, s) {
     const a = window.getAction(step.action);
     const pf = a ? window.PLATFORMS[a.p] : window.PLATFORMS.web;
@@ -152,10 +160,13 @@
         ${s.busy === step.id ? 'جاري التحقق...' : clicked ? 'اشتركت؟ اضغط هنا للتحقق بحساب جوجل' : 'مشترك من قبل؟ تحقق بحساب جوجل'}
       </button>`;
     }
+    // While checking, a small countdown shows how long is left; link.js ticks it every second.
+    const left = checking ? window.secondsLeft(s, step.id) : 0;
     return `<div class="step ${done ? 'done' : ''}">
       <button class="step-btn ${checking ? 'checking' : ''}" data-act="open" data-id="${esc(step.id)}" style="--brand:${pf.color};--brand-fg:${pf.fg}" ${checking || (done && !step.verify) ? 'disabled' : ''}>
         ${checking ? '<span class="spinner" aria-hidden="true"></span>' : window.brandIcon(a ? a.p : 'web', 20)}
         <span class="step-txt" dir="auto">${checking ? 'جاري التحقق...' : esc(window.stepText(step) || 'خطوة جديدة')}</span>
+        ${checking ? `<span class="step-count" aria-live="polite"><b data-count="${esc(step.id)}">${left}</b><small>ثانية</small></span>` : ''}
         ${done ? `<span class="step-ok">${ic('check', 18)}</span>` : ''}
       </button>
       ${verify}
