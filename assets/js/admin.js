@@ -343,7 +343,15 @@
   function updateBar(key, done, total) {
     uploads[key] = { ...uploads[key], done, total };
     const el = document.querySelector(`[data-bar="${key}"]`);
-    if (el) el.outerHTML = barHtml(key);
+    if (!el) return;
+    // Same bar, new numbers: the width slides to the new value instead of being redrawn.
+    const fresh = document.createElement('div');
+    fresh.innerHTML = barHtml(key);
+    const next = fresh.firstElementChild;
+    const oldFill = el.querySelector('.pbar'), newFill = next.querySelector('.pbar');
+    if (oldFill.className !== newFill.className) { el.replaceWith(next); return; }
+    el.querySelector('.upbar-top').innerHTML = next.querySelector('.upbar-top').innerHTML;
+    oldFill.firstElementChild.style.width = newFill.firstElementChild.style.width;
   }
 
   // ------------------------------------------------------------------ cover

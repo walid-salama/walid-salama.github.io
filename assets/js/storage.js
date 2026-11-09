@@ -114,21 +114,53 @@
     const count = Math.max(1, Math.ceil(file.size / PART_BYTES));
     const parts = [];
     const entries = new Array(count);
-    const progress = new Array(count).fill(0);
-    const total = () => progress.reduce((a, b) => a + b, 0);
     for (let n = 1; n <= count; n++) parts.push(`part-${String(n).padStart(3, '0')}`);
+
+    // The browser reports a piece as sent long before GitHub answers, so its own progress
+    // jumps a whole piece at a time. Instead the bar follows the measured speed: each piece
+    // on its way grows by the time it has been travelling, and only a confirmed piece counts
+    // in full. The shown amount never goes back, so the percent climbs one step at a time.
+    const t0 = Date.now();
+    const sizeOf = i => Math.min(PART_BYTES, file.size - i * PART_BYTES);
+    const flying = {}; // piece -> time it was sent
+    let confirmed = 0, target = 0, shown = 0;
+    const speed = () => Math.max(confirmed / Math.max(1, Date.now() - t0), 0.03); // bytes per ms, 30 KB/s at first
+    // The shown amount chases the estimate a small step at a time (at most 2% of the file),
+    // so even a group of pieces confirmed together reads as a quick, even climb.
+    const ease = () => {
+      const gap = target - shown;
+      if (gap > 0) shown += Math.min(gap, Math.max(file.size * 0.003, gap * 0.25), file.size * 0.02);
+      report(shown);
+    };
+    const tick = () => {
+      const ids = Object.keys(flying);
+      const share = speed() / Math.max(1, ids.length);
+      let guess = confirmed;
+      ids.forEach(i => { guess += Math.min(sizeOf(+i) * 0.95, (Date.now() - flying[i]) * share); });
+      target = Math.max(target, Math.min(guess, file.size - 1));
+      ease();
+    };
+    const timer = setInterval(tick, 250);
     let next = 0;
     const worker = async () => {
       while (next < count) {
         const i = next++;
         const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
-        const sha = await sendBlob(piece, d => { progress[i] = d; report(total()); });
-        progress[i] = piece.size;
-        report(total());
+        flying[i] = Date.now();
+        const sha = await sendBlob(piece);
+        delete flying[i];
+        confirmed += piece.size;
         entries[i] = { path: `${dir}/${parts[i]}`, sha };
       }
     };
-    await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
+    try {
+      await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
+    } finally {
+      clearInterval(timer);
+    }
+    // Everything is on GitHub: the bar finishes its climb quickly, still step by step.
+    target = file.size;
+    while (shown < file.size) { ease(); await new Promise(r => setTimeout(r, 40)); }
     const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
     const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
     entries.push({ path: `${dir}/manifest.json`, sha: manifestSha });
