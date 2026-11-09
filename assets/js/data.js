@@ -116,6 +116,10 @@
         r.readAsDataURL(file);
       });
     },
+    async importFile(source, onProgress) {
+      if (typeof source === 'string') return { url: source, name: source.split('/').pop() };
+      return { url: await this.upload(source, 'files', onProgress), name: source.name };
+    },
   };
 
   // --------------------------------------------------------------- supabase
@@ -218,6 +222,12 @@
       if (!store) throw new Error('حدّث الصفحة وحاول تاني.');
       const ready = file.type.startsWith('image/') ? await store.compressImage(file) : file;
       return store.upload(ready, folder, onProgress);
+    },
+    // Books: the GitHub release, from the device or from a link (see storage.js).
+    async importFile(source, onProgress, onStage) {
+      const store = window.GitHubStore;
+      if (!store) throw new Error('حدّث الصفحة وحاول تاني.');
+      return store.importFile(source, onProgress, onStage);
     },
   };
 

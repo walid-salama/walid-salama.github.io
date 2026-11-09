@@ -276,6 +276,7 @@
     return new Blob(pieces, { type: m.type || 'application/octet-stream' });
   }
   const isParts = url => /\/manifest\.json(\?|$)/.test(String(url || ''));
+  const isRelease = url => /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\//.test(String(url || ''));
 
   // Downloads inside the page so the visitor sees exactly how far it got.
   async function downloadFile(card, item) {
@@ -298,6 +299,14 @@
       // In-app browsers often can't save a file made in the page, so they get the direct link,
       // which the phone's own downloader handles.
       // A file kept in pieces can only be put together here, so it never takes the direct link.
+      // Books in the GitHub release go to the phone's or browser's own downloader: full speed,
+      // and it carries on by itself after a drop.
+      if (isRelease(item.value)) {
+        text.textContent = 'التحميل بدأ! هتلاقي الملف في التنزيلات.';
+        location.href = item.value;
+        setTimeout(() => { text.textContent = original; }, 6000);
+        return;
+      }
       const pieces = isParts(item.value);
       if (!pieces && (inApp || !window.ReadableStream || !window.AbortController)) { location.href = card.href; return; }
       bar.hidden = false;

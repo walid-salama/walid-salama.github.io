@@ -101,12 +101,46 @@
   const PART_BYTES = 3 * 1024 * 1024;
   const PARALLEL = 4;
 
+  const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const needToken = () => { if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.'); };
+  const explain = e => {
+    const text = e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e));
+    return new Error(e.detail ? `${text} (${e.detail})` : text);
+  };
+
+  // Sends a file as numbered pieces, a few at a time (several times faster than one by
+  // one), and returns the tree entries for them and their manifest.json.
+  async function sendParts(file, dir, report) {
+    const count = Math.max(1, Math.ceil(file.size / PART_BYTES));
+    const parts = [];
+    const entries = new Array(count);
+    const progress = new Array(count).fill(0);
+    const total = () => progress.reduce((a, b) => a + b, 0);
+    for (let n = 1; n <= count; n++) parts.push(`part-${String(n).padStart(3, '0')}`);
+    let next = 0;
+    const worker = async () => {
+      while (next < count) {
+        const i = next++;
+        const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
+        const sha = await sendBlob(piece, d => { progress[i] = d; report(total()); });
+        progress[i] = piece.size;
+        report(total());
+        entries[i] = { path: `${dir}/${parts[i]}`, sha };
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
+    const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
+    const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+    entries.push({ path: `${dir}/manifest.json`, sha: manifestSha });
+    return entries;
+  }
+
+  // Pictures and small files: kept with the site (files/<folder>/), served by GitHub Pages.
   async function upload(file, folder, onProgress) {
-    if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.');
+    needToken();
     if (file.size > MAX_BYTES) throw new Error('الحد الأقصى لحجم الملف 200 ميجا.');
     const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
-    const rand = Math.random().toString(36).slice(2, 10);
-    const id = `${Date.now().toString(36)}-${rand}`;
+    const id = newId();
     const dir = `${R.dir ? `${R.dir}/` : ''}${folder}`;
     const report = done => { if (onProgress) onProgress(Math.min(done, file.size), file.size); };
     try {
@@ -116,33 +150,60 @@
         await commitFiles([{ path, sha }], `Add ${path}`);
         return `${R.base}/${path}`;
       }
-      // Pieces go up a few at a time, which is several times faster than one by one.
-      const count = Math.ceil(file.size / PART_BYTES);
-      const parts = [];
-      const entries = new Array(count);
-      const progress = new Array(count).fill(0);
-      const total = () => progress.reduce((a, b) => a + b, 0);
-      for (let n = 1; n <= count; n++) parts.push(`part-${String(n).padStart(3, '0')}`);
-      let next = 0;
-      const worker = async () => {
-        while (next < count) {
-          const i = next++;
-          const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
-          const sha = await sendBlob(piece, d => { progress[i] = d; report(total()); });
-          progress[i] = piece.size;
-          report(total());
-          entries[i] = { path: `${dir}/${id}/${parts[i]}`, sha };
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
-      const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
-      const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
-      entries.push({ path: `${dir}/${id}/manifest.json`, sha: manifestSha });
-      await commitFiles(entries, `Add ${dir}/${id} (${parts.length} parts)`);
+      const entries = await sendParts(file, `${dir}/${id}`, report);
+      await commitFiles(entries, `Add ${dir}/${id} (${entries.length - 1} parts)`);
       return `${R.base}/${dir}/${id}/manifest.json`;
     } catch (e) {
-      const text = e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e));
-      throw new Error(e.detail ? `${text} (${e.detail})` : text);
+      throw explain(e);
+    }
+  }
+
+  // Books and other downloads go to the "files" release (.github/workflows/import-file.yml):
+  // up to 1.9 GB each, no limit on how many, and visitors download them directly at full
+  // speed. source is a File from the device, or a link (Google Drive, Dropbox, MediaFire or
+  // a direct link) that GitHub's servers download themselves, without using the owner's
+  // connection. onStage(text) reports what is happening; onProgress the upload from a device.
+  async function importFile(source, onProgress, onStage) {
+    needToken();
+    const stage = t => { if (onStage) onStage(t); };
+    const id = newId();
+    const entries = [];
+    const request = { id };
+    try {
+      if (typeof source === 'string') {
+        const url = source.trim();
+        if (!/^https?:\/\/\S+$/i.test(url)) throw new Error('حط رابط صحيح يبدأ بـ https://');
+        request.url = url;
+      } else {
+        if (source.size > 1900 * 1024 * 1024) throw new Error('الحد الأقصى لحجم الملف 1.9 جيجا.');
+        const dir = `${R.dir ? `${R.dir}/` : ''}incoming/${id}`;
+        stage('جاري الرفع');
+        entries.push(...await sendParts(source, dir, d => { if (onProgress) onProgress(Math.min(d, source.size), source.size); }));
+        request.parts = dir;
+      }
+      const sha = await sendBlob(new Blob([JSON.stringify(request)], { type: 'application/json' }));
+      entries.push({ path: `migrate/requests/${id}.json`, sha });
+      await commitFiles(entries, `Import file ${id}`);
+    } catch (e) {
+      throw explain(e);
+    }
+
+    stage(typeof source === 'string' ? 'GitHub بينزّل الملف من الرابط...' : 'GitHub بيجهز الملف...');
+    const started = Date.now();
+    for (;;) {
+      await new Promise(r => setTimeout(r, 6000));
+      if (Date.now() - started > 40 * 60 * 1000) throw new Error('GitHub اتأخر. جرّب تاني بعد شوية.');
+      let res;
+      try {
+        res = await gh('GET', `/contents/migrate/results/${id}.json?ref=${R.branch}`);
+      } catch (e) {
+        if (e.status === 404 || e.message === 'network') continue;
+        throw explain(e);
+      }
+      const bytes = Uint8Array.from(atob(String(res.content).replace(/\s/g, '')), c => c.charCodeAt(0));
+      const out = JSON.parse(new TextDecoder().decode(bytes));
+      if (!out.ok) throw new Error(out.error || 'تعذر تجهيز الملف.');
+      return out;
     }
   }
 
@@ -217,5 +278,5 @@
     await commitFiles([{ path: 'migrate/urls.txt', sha }], `Ask GitHub to move ${urls.length} old files`);
   }
 
-  window.GitHubStore = { token, check, upload, compressImage, isSupabaseFile, moveFromSupabase, movedAddress, askCloudMove, ready: () => !!token.get() };
+  window.GitHubStore = { token, check, upload, compressImage, isSupabaseFile, moveFromSupabase, movedAddress, askCloudMove, importFile, ready: () => !!token.get() };
 })();

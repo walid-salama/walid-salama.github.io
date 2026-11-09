@@ -318,13 +318,19 @@
 
   function barHtml(key) {
     const u = uploads[key];
+    // After the upload, GitHub still prepares the file: the bar moves without a percent.
+    const waiting = u.note && (!u.total || u.done >= u.total || u.note !== 'جاري الرفع');
     const p = window.progressInfo('جاري الرفع', u.done, u.total);
+    if (waiting) {
+      return `<div class="upbar" data-bar="${esc(key)}"><div class="upbar-top"><b></b><span>${esc(u.note)}</span></div>
+        <i class="pbar unknown"><i style="width:100%"></i></i></div>`;
+    }
     return `<div class="upbar" data-bar="${esc(key)}"><div class="upbar-top"><b>${p.pct === null ? '' : `${p.pct}%`}</b><span>${esc(p.text)}</span></div>
       <i class="pbar"><i style="width:${p.pct || 0}%"></i></i></div>`;
   }
 
   function updateBar(key, done, total) {
-    uploads[key] = { done, total };
+    uploads[key] = { ...uploads[key], done, total };
     const el = document.querySelector(`[data-bar="${key}"]`);
     if (el) el.outerHTML = barHtml(key);
   }
@@ -473,10 +479,13 @@
       } else if (uploads[it.id]) {
         field = barHtml(it.id);
       } else {
+        // A link is the fastest way: GitHub downloads it itself, whatever the owner's connection.
+        const fromLink = `<div class="link-import"><input data-item-link dir="ltr" inputmode="url" placeholder="أو حط رابط الكتاب: Google Drive أو Dropbox أو MediaFire">
+            <button type="button" class="btn sm primary" data-item-link-go>${ic('download', 16)} رفع من الرابط</button></div>`;
         field = it.value
           ? `<div class="file-chosen">${ic('file', 18)}<span dir="auto">${esc(it.fileName || 'ملف')}</span>
-              <label class="btn sm">تغيير<input type="file" hidden data-item-file></label></div>`
-          : `<label class="drop small">${ic('upload', 22)}<b>اختار ملف PDF أو أي ملف آخر</b><input type="file" hidden data-item-file></label>`;
+              <label class="btn sm">تغيير<input type="file" hidden data-item-file></label></div>${fromLink}`
+          : `<label class="drop small">${ic('upload', 22)}<b>اختار ملف PDF أو أي ملف آخر (لحد 1.9 جيجا)</b><input type="file" hidden data-item-file></label>${fromLink}`;
       }
       return `<div class="sort-row item-row" data-id="${esc(it.id)}">
         <span class="grip" title="اسحب لإعادة الترتيب">${ic('grip', 18)}</span>
@@ -634,18 +643,36 @@
       } else if ('itemFile' in el.dataset && el.files[0]) {
         const row = el.closest('.sort-row');
         const it = draft.items.find(x => x.id === row.dataset.id);
-        const file = el.files[0];
-        uploads[it.id] = { done: 0, total: file.size };
-        renderItems();
-        try {
-          it.value = await DB.upload(file, 'files', (d, t) => updateBar(it.id, d, t));
-          it.fileName = file.name;
-          if (!it.label) it.label = file.name.replace(/\.[^.]+$/, '');
-          touch();
-        } catch (err) { toast(err.message || 'تعذر رفع الملف', 'err'); }
-        delete uploads[it.id];
-        renderItems();
+        importItemFile(it, el.files[0]);
       }
+    });
+
+    // Puts a book in the release, from the device or from a link (DB.importFile).
+    async function importItemFile(it, source) {
+      const isLink = typeof source === 'string';
+      uploads[it.id] = { done: 0, total: isLink ? 0 : source.size, note: isLink ? 'بيبعت الرابط لـ GitHub...' : '' };
+      renderItems();
+      try {
+        const out = await DB.importFile(source,
+          (d, t) => updateBar(it.id, d, t),
+          note => { uploads[it.id] = { ...uploads[it.id], note }; updateBar(it.id, uploads[it.id].done, uploads[it.id].total); });
+        it.value = out.url;
+        it.fileName = out.name || (isLink ? 'file' : source.name);
+        if (!it.label) it.label = it.fileName.replace(/\.[^.]+$/, '');
+        touch();
+        toast('الملف جاهز. متنساش تحفظ البوست.', 'ok');
+      } catch (err) { toast(err.message || 'تعذر رفع الملف', 'err'); }
+      delete uploads[it.id];
+      renderItems();
+    }
+    form.addEventListener('click', e => {
+      const go = e.target.closest('[data-item-link-go]');
+      if (!go) return;
+      const row = go.closest('.sort-row');
+      const it = draft.items.find(x => x.id === row.dataset.id);
+      const link = row.querySelector('[data-item-link]').value.trim();
+      if (!/^https?:\/\/\S+$/i.test(link)) { toast('حط رابط صحيح يبدأ بـ https://', 'err'); return; }
+      importItemFile(it, link);
     });
 
     form.addEventListener('click', e => {
