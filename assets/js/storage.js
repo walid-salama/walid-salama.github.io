@@ -133,10 +133,28 @@
   // the last 3% for saving on GitHub, and gives the time left: onProgress(done, total, secondsLeft).
   function meter(size, onProgress) {
     const t0 = Date.now();
-    const flying = {};
+    const flying = {}; // piece -> { sent, start, size }
     let confirmed = 0, shown = 0, done = false;
-    const actual = () => confirmed + Object.keys(flying).reduce((a, k) => a + flying[k], 0);
-    const rate = () => actual() / Math.max(1, Date.now() - t0); // bytes per ms
+    // The browser says a piece is "sent" as soon as it sits in its own buffer, well before
+    // GitHub has it. So pieces on their way are credited at the speed GitHub really takes
+    // them in (measured from confirmed pieces), and never past what the browser has sent.
+    // Until the first piece is confirmed, the speed of this device's last upload stands in
+    // (40 KB/s the first time); it is saved again at the end of every upload.
+    const RATE_KEY = 'miftah_up_rate';
+    let prior = 40; // bytes per ms = about 40 KB/s
+    try { prior = Number(localStorage.getItem(RATE_KEY)) || prior; } catch (e) {}
+    const rate = () => {
+      const ms = Math.max(1, Date.now() - t0);
+      return confirmed > 0 ? confirmed / ms : prior; // bytes per ms
+    };
+    const actual = () => {
+      const keys = Object.keys(flying);
+      const share = rate() / Math.max(1, keys.length);
+      return confirmed + keys.reduce((a, k) => {
+        const f = flying[k];
+        return a + Math.min(f.sent, f.size * 0.9, (Date.now() - f.start) * share);
+      }, 0);
+    };
     const send = () => {
       if (!onProgress) return;
       const r = rate();
@@ -152,11 +170,15 @@
     const timer = setInterval(tick, 250);
     tick();
     return {
-      sending(i, bytes, pieceSize) { flying[i] = Math.min(bytes, pieceSize * 0.9); },
+      sending(i, bytes, pieceSize) {
+        if (!flying[i]) flying[i] = { sent: 0, start: Date.now(), size: pieceSize };
+        flying[i].sent = Math.max(flying[i].sent, bytes);
+      },
       sent(i, pieceSize) { delete flying[i]; confirmed += pieceSize; },
       async finish() {
         clearInterval(timer);
         done = true;
+        if (size > 512 * 1024) { try { localStorage.setItem(RATE_KEY, String(size / Math.max(1, Date.now() - t0))); } catch (e) {} }
         while (shown < size) {
           shown = Math.min(size, shown + size * 0.01);
           send();
@@ -179,6 +201,7 @@
       while (next < count) {
         const i = next++;
         const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
+        m.sending(i, 0, piece.size);
         const sha = await sendBlob(piece, b => m.sending(i, b, piece.size));
         m.sent(i, piece.size);
         entries[i] = { path: `${dir}/${parts[i]}`, sha };
@@ -203,6 +226,7 @@
       let url;
       if (file.size <= PART_BYTES) {
         const path = `${dir}/${id}${ext}`;
+        m.sending(0, 0, file.size);
         const sha = await sendBlob(file, b => m.sending(0, b, file.size));
         m.sent(0, file.size);
         await commitFiles([{ path, sha }], `Add ${path}`);
