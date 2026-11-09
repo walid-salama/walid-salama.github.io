@@ -395,6 +395,10 @@ body.home img, body.link-page img { -webkit-user-drag: none; }
 .g-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: #fff; color: #1a73e8; font: 900 15px/1 Arial, sans-serif; }
 .step-btn:disabled { cursor: default; transform: none; filter: none; }
 .step-btn.checking { background: var(--surface-3); color: #cdd3da; border-color: var(--line); }
+/* countdown on a checking step: a small pill with the seconds left */
+.step-count { display: inline-flex; align-items: baseline; gap: 3px; flex: none; min-width: 54px; justify-content: center; padding: 4px 10px; border-radius: 99px; background: rgba(16, 224, 138, .14); color: var(--accent); box-shadow: inset 0 0 0 1px rgba(16, 224, 138, .35); }
+.step-count b { font-size: 17px; font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+.step-count small { font-size: 11px; font-weight: 700; opacity: .85; }
 .spinner { width: 20px; height: 20px; flex: none; border-radius: 50%; border: 3px solid rgba(255, 255, 255, .25); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 .lk-card > .lk-side.is-ready { display: flex; align-self: stretch; }
 .ready-panel {
