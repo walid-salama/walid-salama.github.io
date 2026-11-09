@@ -610,7 +610,7 @@ body.reading.bg-host::before { display: none; }
 .drop small { color: var(--muted); font-size: 13px; }
 .drop.small { min-height: 84px; flex-direction: row; gap: 10px; }
 .pbar { display: block; height: 8px; border-radius: 9px; background: rgba(255, 255, 255, .12); overflow: hidden; }
-.pbar > i { display: block; width: 0; height: 100%; border-radius: 9px; background: var(--accent); transition: width .2s; }
+.pbar > i { display: block; width: 0; height: 100%; border-radius: 9px; background: var(--accent); transition: width .35s linear; }
 .pbar.unknown > i { opacity: .55; animation: pulse 1.1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 1; } }
 .upbar { padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; }
