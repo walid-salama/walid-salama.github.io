@@ -1,0 +1,74 @@
+# Moves the old files from Supabase Storage into files/old/ on GitHub's own servers, which
+# is far faster than sending them up from the owner's connection. The dashboard writes the
+# list of addresses to migrate/urls.txt, then waits for the files to go live.
+name: Move old files
+on:
+  push:
+    branches: [main]
+    paths: ['migrate/urls.txt']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: move-files
+  cancel-in-progress: false
+jobs:
+  move:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - run: pip install --quiet pillow
+      - name: Download and store
+        shell: python
+        run: |
+          import os, urllib.parse, urllib.request
+          from PIL import Image
+          MARK = '/storage/v1/object/public/'
+          done = 0
+          for line in open('migrate/urls.txt', encoding='utf-8'):
+              url = line.strip()
+              if not url or url.startswith('#') or MARK not in url:
+                  continue
+              rel = urllib.parse.unquote(url.split(MARK, 1)[1].split('?')[0])
+              path = os.path.join('files', 'old', *[p for p in rel.split('/') if p not in ('', '.', '..')])
+              if os.path.exists(path):
+                  continue
+              os.makedirs(os.path.dirname(path), exist_ok=True)
+              for attempt in range(5):
+                  try:
+                      urllib.request.urlretrieve(url, path)
+                      break
+                  except Exception as e:
+                      print('retry', url, e)
+              else:
+                  raise SystemExit('failed: ' + url)
+              # Pictures are shrunk, as the dashboard does for new uploads.
+              ext = path.rsplit('.', 1)[-1].lower()
+              if ext in ('jpg', 'jpeg', 'png', 'webp'):
+                  try:
+                      im = Image.open(path)
+                      im.thumbnail((1600, 1600))
+                      if ext in ('jpg', 'jpeg'):
+                          im.convert('RGB').save(path, quality=82, optimize=True)
+                      else:
+                          im.save(path, optimize=True)
+                  except Exception as e:
+                      print('kept as is', path, e)
+              size = os.path.getsize(path)
+              if size > 95 * 1024 * 1024:
+                  os.remove(path)
+                  raise SystemExit('too big for GitHub: ' + url)
+              done += 1
+              print('moved', path, size)
+          print('files moved:', done)
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add files/old
+          git diff --cached --quiet && exit 0
+          git commit -m "Move old files from Supabase"
+          for i in 1 2 3 4 5; do git pull --rebase && git push && exit 0; sleep 5; done
+          exit 1
