@@ -255,6 +255,7 @@
     if (!res.ok) throw new Error('manifest');
     const m = await res.json();
     const base = url.replace(/manifest\.json(\?.*)?$/, '');
+    onProgress(0, m.size || 0);
     // Four pieces at a time: much faster than one by one, and still kind to slow phones.
     const pieces = new Array(m.parts.length);
     const got = new Array(m.parts.length).fill(0);
@@ -287,12 +288,30 @@
     const bar = card.querySelector('[data-dl-bar]');
     const original = text.textContent;
     const originalBtn = btn.innerHTML;
+    // The bar only ever moves forward: a piece that restarts after a drop, or a size that
+    // arrives late, never makes it jump back. It fills from 0 to 100 once, then the file is saved.
+    let best = 0, bestPct = 0;
     const show = (done, total) => {
-      const p = window.progressInfo('جاري التحميل', done, total);
-      text.textContent = p.text;
-      btn.textContent = p.pct === null ? `${(done / 1048576).toFixed(1)} ميجا` : `${p.pct}%`;
-      bar.firstElementChild.style.width = p.pct === null ? '100%' : `${p.pct}%`;
+      best = Math.max(best, done);
+      const p = window.progressInfo('جاري التحميل', best, total);
+      if (p.pct !== null) bestPct = Math.max(bestPct, Math.min(p.pct, 99));
+      if (p.pct === null && !best) {
+        text.textContent = 'جاري بدء التحميل...';
+        btn.textContent = '0%';
+        bar.firstElementChild.style.width = '0%';
+        bar.classList.remove('unknown');
+        return;
+      }
+      text.textContent = p.pct === null ? p.text : `جاري التحميل ${bestPct}% (${(best / 1048576).toFixed(1)} من ${(total / 1048576).toFixed(1)} ميجا)`;
+      btn.textContent = p.pct === null ? `${(best / 1048576).toFixed(1)} ميجا` : `${bestPct}%`;
+      // No size from the server: the bar breathes in place instead of guessing a percent.
+      bar.firstElementChild.style.width = p.pct === null ? '100%' : `${bestPct}%`;
       bar.classList.toggle('unknown', p.pct === null);
+    };
+    const finish = () => {
+      bar.classList.remove('unknown');
+      bar.firstElementChild.style.width = '100%';
+      btn.textContent = '100%';
     };
     try {
       if (item.value.startsWith('data:')) { card.removeAttribute('data-act'); card.click(); return; }
@@ -312,6 +331,7 @@
       bar.hidden = false;
       show(0, 0);
       const blob = pieces ? await fetchParts(item.value, show) : await fetchResumable(item.value, show);
+      finish();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
