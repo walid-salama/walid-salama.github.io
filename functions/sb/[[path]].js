@@ -27,7 +27,10 @@ export async function onRequest({ request, params }) {
     return new Response(null, { status: 204, headers });
   }
 
-  const path = `/${[].concat(params.path || []).join('/')}`;
+  const segments = [].concat(params.path || []);
+  // No climbing out of the allowed folders with "..", plain or encoded.
+  if (segments.some(s => /^\.{1,2}$/.test(s) || /%2e|%2f|%5c|\\/i.test(s))) return new Response('Not found', { status: 404 });
+  const path = `/${segments.join('/')}`;
   const isRpc = request.method === 'POST' && path.startsWith(RPC) && ALLOWED_RPC.has(path.slice(RPC.length));
   const isFile = ['GET', 'HEAD'].includes(request.method) && path.startsWith(FILES);
   if (!isRpc && !isFile) return new Response('Not found', { status: 404 });
