@@ -125,7 +125,7 @@
     if (S && S.ready() && !keyChecked) {
       keyChecked = true;
       S.check().then(r => {
-        if (!r.ok && !app.querySelector('.store-note')) app.insertAdjacentHTML('afterbegin', storeNote(r.text));
+        if (!r.ok && r.definite && !app.querySelector('.store-note')) app.insertAdjacentHTML('afterbegin', storeNote(r.text));
       });
     }
 
@@ -327,21 +327,34 @@
   // ---------------------------------------------------------- upload progress
   const uploads = {}; // 'cover' or an item id -> {done, total}
 
+  // "about 3 minutes left", from the seconds the upload meter estimates (storage.js).
+  const timeLeft = s => {
+    if (s === null || s === undefined) return 'بيحسب الوقت...';
+    if (s <= 0) return 'خلاص';
+    if (s < 60) return `فاضل أقل من دقيقة`;
+    const m = Math.ceil(s / 60);
+    return `فاضل حوالي ${m} ${m <= 10 && m > 2 ? 'دقايق' : 'دقيقة'}`;
+  };
+  window.uploadText = (done, total, left) => {
+    const p = window.progressInfo('جاري الرفع', done, total);
+    return p.pct === null ? p.text : `${p.text} · ${timeLeft(left)}`;
+  };
+
   function barHtml(key) {
     const u = uploads[key];
     // After the upload, GitHub still prepares the file: the bar moves without a percent.
-    const waiting = u.note && (!u.total || u.done >= u.total || u.note !== 'جاري الرفع');
+    const waiting = u.note && u.note !== 'جاري الرفع';
     const p = window.progressInfo('جاري الرفع', u.done, u.total);
     if (waiting) {
       return `<div class="upbar" data-bar="${esc(key)}"><div class="upbar-top"><b></b><span>${esc(u.note)}</span></div>
         <i class="pbar unknown"><i style="width:100%"></i></i></div>`;
     }
-    return `<div class="upbar" data-bar="${esc(key)}"><div class="upbar-top"><b>${p.pct === null ? '' : `${p.pct}%`}</b><span>${esc(p.text)}</span></div>
+    return `<div class="upbar" data-bar="${esc(key)}"><div class="upbar-top"><b>${p.pct === null ? '' : `${p.pct}%`}</b><span>${esc(window.uploadText(u.done, u.total, u.left))}</span></div>
       <i class="pbar"><i style="width:${p.pct || 0}%"></i></i></div>`;
   }
 
-  function updateBar(key, done, total) {
-    uploads[key] = { ...uploads[key], done, total };
+  function updateBar(key, done, total, left) {
+    uploads[key] = { ...uploads[key], done, total, left };
     const el = document.querySelector(`[data-bar="${key}"]`);
     if (!el) return;
     // Same bar, new numbers: the width slides to the new value instead of being redrawn.
@@ -368,11 +381,11 @@
 
   async function uploadCover(file) {
     if (!file || !file.type.startsWith('image/')) { toast('اختار ملف صورة', 'err'); return; }
-    if (!storeReady()) return;
+    if (!(await storeReady())) return;
     uploads.cover = { done: 0, total: file.size };
     renderCover();
     try {
-      draft.cover_url = await DB.upload(file, 'covers', (d, t) => updateBar('cover', d, t));
+      draft.cover_url = await DB.upload(file, 'covers', (d, t, s) => updateBar('cover', d, t, s));
       touch();
     } catch (e) { uploadFailed(e, 'تعذر رفع الصورة'); }
     delete uploads.cover;
@@ -457,7 +470,7 @@
     const files = picked.filter(f => f.type.startsWith('image/'))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (!files.length) { toast('اختار ملف صورة', 'err'); return; }
-    if (!storeReady()) return;
+    if (!(await storeReady())) return;
     const status = ta.parentElement.querySelector('[data-art-status]');
     const key = `art-${newId()}`;
     const cursor = ta.selectionStart;
@@ -467,8 +480,8 @@
     try {
       for (let i = 0; i < files.length; i++) {
         const counter = files.length > 1 ? ` ${i + 1} من ${files.length}` : '';
-        urls.push(await DB.upload(files[i], 'articles', (d, t) => {
-          status.textContent = window.progressInfo(`جاري رفع الصورة${counter}`, d, t).text;
+        urls.push(await DB.upload(files[i], 'articles', (d, t, s) => {
+          status.textContent = `${window.progressInfo(`جاري رفع الصورة${counter}`, d, t).text} · ${timeLeft(s)}`;
         }));
       }
     } catch (err) { uploadFailed(err, 'تعذر رفع الصورة'); }
@@ -671,13 +684,13 @@
     // Puts a book in the release, from the device or from a link (DB.importFile).
     async function importItemFile(it, source) {
       const isLink = typeof source === 'string';
-      if (!storeReady()) return;
+      if (!(await storeReady())) return;
       uploads[it.id] = { done: 0, total: isLink ? 0 : source.size, note: isLink ? 'بيبعت الرابط لـ GitHub...' : '' };
       renderItems();
       try {
         const out = await DB.importFile(source,
-          (d, t) => updateBar(it.id, d, t),
-          note => { uploads[it.id] = { ...uploads[it.id], note }; updateBar(it.id, uploads[it.id].done, uploads[it.id].total); });
+          (d, t, s) => updateBar(it.id, d, t, s),
+          note => { uploads[it.id] = { ...uploads[it.id], note }; updateBar(it.id, uploads[it.id].done, uploads[it.id].total, uploads[it.id].left); });
         it.value = out.url;
         it.fileName = out.name || (isLink ? 'file' : source.name);
         if (!it.label) it.label = it.fileName.replace(/\.[^.]+$/, '');
@@ -880,8 +893,10 @@
 
   // Uploads need the GitHub key on this device. Without it (a new phone, or an expired
   // key) the connect screen opens by itself instead of the upload failing.
-  function storeReady() {
+  async function storeReady() {
     if (DB.isDemo || !window.GitHubStore || window.GitHubStore.ready()) return true;
+    await syncKey(); // the account may hold the key already (the first sync can miss it offline)
+    if (window.GitHubStore.ready()) return true;
     openStorage();
     return false;
   }
@@ -892,7 +907,7 @@
     if (keyProblem(err) && window.GitHubStore) {
       await syncKey();
       const r = await window.GitHubStore.check();
-      if (!r.ok && !/انقطع/.test(r.text)) { toast(r.text, 'err'); openStorage(); return; }
+      if (!r.ok && r.definite) { toast(r.text, 'err'); openStorage(); return; }
       toast('النت فصل أثناء الرفع. اختار الملف تاني وهيترفع.', 'err');
       return;
     }

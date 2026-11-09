@@ -51,8 +51,14 @@
 
   // Adds files to the repository as one new commit. Two uploads at the same moment can
   // race for the branch, so it retries from the latest state.
+  // A phone on mobile data often loses the answer of a request that GitHub did carry out.
+  // So a dropped connection or a server hiccup is tried again, and the last step checks
+  // whether the commit already went in before reporting anything as failed.
+  const passing = e => e.message === 'network' || e.status >= 500 || e.status === 409 || e.status === 422;
   async function commitFiles(entries, message) {
-    for (let attempt = 0; attempt < 8; attempt++) {
+    let lastError;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      let commitSha = '';
       try {
         const ref = await gh('GET', `/git/ref/heads/${R.branch}`);
         const parent = await gh('GET', `/git/commits/${ref.object.sha}`);
@@ -61,18 +67,23 @@
           tree: entries.map(e => ({ path: e.path, mode: '100644', type: 'blob', sha: e.sha })),
         });
         const commit = await gh('POST', '/git/commits', { message, tree: tree.sha, parents: [ref.object.sha] });
+        commitSha = commit.sha;
         await gh('PATCH', `/git/refs/heads/${R.branch}`, { sha: commit.sha });
         return;
       } catch (e) {
-        if (e.status !== 409 && e.status !== 422) throw e;
-        await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+        lastError = e;
+        if (commitSha) {
+          try { if ((await gh('GET', `/git/ref/heads/${R.branch}`)).object.sha === commitSha) return; } catch (e2) {}
+        }
+        if (!passing(e)) throw e;
+        await new Promise(r => setTimeout(r, Math.min(1000 * (attempt + 1), 6000)));
       }
     }
-    throw new Error('github_busy');
+    throw lastError || new Error('github_busy');
   }
 
   function friendly(e) {
-    if (e.status === 401) return 'مفتاح GitHub غير صحيح أو انتهت صلاحيته. اربطه تاني من زرار "التخزين".';
+    if (e.status === 401) return 'مفتاح GitHub غير صحيح أو انتهت صلاحيته. حط مفتاح جديد.';
     if (e.status === 403 || e.status === 404) return 'المفتاح مالوش صلاحية الكتابة على مستودع الموقع. راجع خطوات الربط.';
     if (e.message === 'network') return 'انقطع الاتصال أثناء الرفع. حاول تاني.';
     return 'تعذر رفع الملف على GitHub. حاول تاني.';
@@ -107,7 +118,7 @@
   const PARALLEL = 3;
 
   const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-  const needToken = () => { if (!token.get()) throw new Error('اربط التخزين على GitHub الأول من زرار "التخزين" اللي فوق.'); };
+  const needToken = () => { if (!token.get()) throw new Error('اربط التخزين على GitHub الأول.'); };
   const explain = e => {
     const text = e.status || e.message === 'network' ? friendly(e) : (e.message || friendly(e));
     return new Error(e.detail ? `${text} (${e.detail})` : text);
@@ -115,57 +126,65 @@
 
   // Sends a file as numbered pieces, a few at a time (several times faster than one by
   // one), and returns the tree entries for them and their manifest.json.
-  async function sendParts(file, dir, report) {
+  // One progress bar for the whole file, from 0 to 100, whatever happens underneath.
+  // It counts the bytes really sent (the pieces already confirmed, plus what the browser
+  // says it has sent of the pieces on their way) and moves at the measured average speed,
+  // so it climbs at an even pace instead of rushing and stopping. It never goes back, keeps
+  // the last 3% for saving on GitHub, and gives the time left: onProgress(done, total, secondsLeft).
+  function meter(size, onProgress) {
+    const t0 = Date.now();
+    const flying = {};
+    let confirmed = 0, shown = 0, done = false;
+    const actual = () => confirmed + Object.keys(flying).reduce((a, k) => a + flying[k], 0);
+    const rate = () => actual() / Math.max(1, Date.now() - t0); // bytes per ms
+    const send = () => {
+      if (!onProgress) return;
+      const r = rate();
+      const left = r > 0 && Date.now() - t0 > 3000 ? Math.max(1, Math.round((size - shown) / r / 1000)) : null;
+      onProgress(Math.min(shown, size), size, done ? 0 : left);
+    };
+    const tick = () => {
+      const reach = Math.min(actual(), size * 0.97);
+      const step = Math.max(rate() * 250 * 1.25, size * 0.001);
+      shown = Math.max(shown, Math.min(reach, shown + step));
+      send();
+    };
+    const timer = setInterval(tick, 250);
+    tick();
+    return {
+      sending(i, bytes, pieceSize) { flying[i] = Math.min(bytes, pieceSize * 0.9); },
+      sent(i, pieceSize) { delete flying[i]; confirmed += pieceSize; },
+      async finish() {
+        clearInterval(timer);
+        done = true;
+        while (shown < size) {
+          shown = Math.min(size, shown + size * 0.01);
+          send();
+          await new Promise(r => setTimeout(r, 25));
+        }
+      },
+      stop() { clearInterval(timer); },
+    };
+  }
+
+  // Sends a file as numbered pieces, a few at a time, and returns the tree entries for
+  // them and their manifest.json.
+  async function sendParts(file, dir, m) {
     const count = Math.max(1, Math.ceil(file.size / PART_BYTES));
     const parts = [];
     const entries = new Array(count);
     for (let n = 1; n <= count; n++) parts.push(`part-${String(n).padStart(3, '0')}`);
-
-    // The browser reports a piece as sent long before GitHub answers, so its own progress
-    // jumps a whole piece at a time. Instead the bar follows the measured speed: each piece
-    // on its way grows by the time it has been travelling, and only a confirmed piece counts
-    // in full. The shown amount never goes back, so the percent climbs one step at a time.
-    const t0 = Date.now();
-    const sizeOf = i => Math.min(PART_BYTES, file.size - i * PART_BYTES);
-    const flying = {}; // piece -> time it was sent
-    let confirmed = 0, target = 0, shown = 0;
-    const speed = () => Math.max(confirmed / Math.max(1, Date.now() - t0), 0.03); // bytes per ms, 30 KB/s at first
-    // The shown amount chases the estimate a small step at a time (at most 2% of the file),
-    // so even a group of pieces confirmed together reads as a quick, even climb.
-    const ease = () => {
-      const gap = target - shown;
-      if (gap > 0) shown += Math.min(gap, Math.max(file.size * 0.003, gap * 0.25), file.size * 0.02);
-      report(shown);
-    };
-    const tick = () => {
-      const ids = Object.keys(flying);
-      const share = speed() / Math.max(1, ids.length);
-      let guess = confirmed;
-      ids.forEach(i => { guess += Math.min(sizeOf(+i) * 0.95, (Date.now() - flying[i]) * share); });
-      target = Math.max(target, Math.min(guess, file.size - 1));
-      ease();
-    };
-    const timer = setInterval(tick, 250);
     let next = 0;
     const worker = async () => {
       while (next < count) {
         const i = next++;
         const piece = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
-        flying[i] = Date.now();
-        const sha = await sendBlob(piece);
-        delete flying[i];
-        confirmed += piece.size;
+        const sha = await sendBlob(piece, b => m.sending(i, b, piece.size));
+        m.sent(i, piece.size);
         entries[i] = { path: `${dir}/${parts[i]}`, sha };
       }
     };
-    try {
-      await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
-    } finally {
-      clearInterval(timer);
-    }
-    // Everything is on GitHub: the bar finishes its climb quickly, still step by step.
-    target = file.size;
-    while (shown < file.size) { ease(); await new Promise(r => setTimeout(r, 40)); }
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, count) }, worker));
     const manifest = { name: file.name, type: file.type || 'application/octet-stream', size: file.size, parts };
     const manifestSha = await sendBlob(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
     entries.push({ path: `${dir}/manifest.json`, sha: manifestSha });
@@ -179,18 +198,24 @@
     const ext = (file.name.match(/\.[a-z0-9]{1,8}$/i) || [''])[0].toLowerCase();
     const id = newId();
     const dir = `${R.dir ? `${R.dir}/` : ''}${folder}`;
-    const report = done => { if (onProgress) onProgress(Math.min(done, file.size), file.size); };
+    const m = meter(file.size, onProgress);
     try {
+      let url;
       if (file.size <= PART_BYTES) {
         const path = `${dir}/${id}${ext}`;
-        const sha = await sendBlob(file, report);
+        const sha = await sendBlob(file, b => m.sending(0, b, file.size));
+        m.sent(0, file.size);
         await commitFiles([{ path, sha }], `Add ${path}`);
-        return `${R.base}/${path}`;
+        url = `${R.base}/${path}`;
+      } else {
+        const entries = await sendParts(file, `${dir}/${id}`, m);
+        await commitFiles(entries, `Add ${dir}/${id} (${entries.length - 1} parts)`);
+        url = `${R.base}/${dir}/${id}/manifest.json`;
       }
-      const entries = await sendParts(file, `${dir}/${id}`, report);
-      await commitFiles(entries, `Add ${dir}/${id} (${entries.length - 1} parts)`);
-      return `${R.base}/${dir}/${id}/manifest.json`;
+      await m.finish();
+      return url;
     } catch (e) {
+      m.stop();
       throw explain(e);
     }
   }
@@ -208,7 +233,8 @@
     const request = { id };
     // The key is checked first, so a refusal later in the upload is known to be passing.
     const key = await check();
-    if (!key.ok) throw new Error(key.text);
+    if (!key.ok && key.definite) throw new Error(key.text);
+    let m = null;
     try {
       if (typeof source === 'string') {
         const url = source.trim();
@@ -218,13 +244,16 @@
         if (source.size > 1900 * 1024 * 1024) throw new Error('الحد الأقصى لحجم الملف 1.9 جيجا.');
         const dir = `${R.dir ? `${R.dir}/` : ''}incoming/${id}`;
         stage('جاري الرفع');
-        entries.push(...await sendParts(source, dir, d => { if (onProgress) onProgress(Math.min(d, source.size), source.size); }));
+        m = meter(source.size, onProgress);
+        entries.push(...await sendParts(source, dir, m));
         request.parts = dir;
       }
       const sha = await sendBlob(new Blob([JSON.stringify(request)], { type: 'application/json' }));
       entries.push({ path: `migrate/requests/${id}.json`, sha });
       await commitFiles(entries, `Import file ${id}`);
+      if (m) await m.finish();
     } catch (e) {
+      if (m) m.stop();
       throw explain(e);
     }
 
@@ -248,15 +277,24 @@
   }
 
   // Checks the key: it must reach the repository and be allowed to write to it.
+  // definite: GitHub itself answered that the key is wrong, as opposed to a dropped
+  // connection; only then does the dashboard ask for the key again.
   async function check() {
-    if (!token.get()) return { ok: false, text: 'مش مربوط' };
-    try {
-      const repo = await gh('GET', '');
-      if (!repo.permissions || !repo.permissions.push) return { ok: false, text: 'المفتاح شغال بس مالوش صلاحية الكتابة على المستودع.' };
-      return { ok: true, text: `مربوط بـ ${repo.full_name}` };
-    } catch (e) {
-      return { ok: false, text: friendly(e) };
+    if (!token.get()) return { ok: false, definite: true, text: 'مش مربوط' };
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const repo = await gh('GET', '');
+        if (!repo.permissions || !repo.permissions.push) return { ok: false, definite: true, text: 'المفتاح شغال بس مالوش صلاحية الكتابة على المستودع.' };
+        return { ok: true, text: `مربوط بـ ${repo.full_name}` };
+      } catch (e) {
+        lastError = e;
+        if (!(e.message === 'network' || e.status >= 500)) break;
+        await new Promise(r => setTimeout(r, 1500));
+      }
     }
+    const definite = [401, 403, 404].includes(lastError.status);
+    return { ok: false, definite, text: definite ? friendly(lastError) : 'النت ضعيف دلوقتي. حاول تاني.' };
   }
 
   // Shrinks a picture before upload: big phone photos become a fraction of their size,
