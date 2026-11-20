@@ -122,6 +122,31 @@
       if (typeof source === 'string') return { url: source, name: source.split('/').pop() };
       return { url: await this.upload(source, 'files', onProgress), name: source.name };
     },
+    // Demo purchase: no card, the order is paid at once (browser only).
+    async checkout(slug, buyer) {
+      const p = demoPosts().find(x => x.slug === slug);
+      if (!p || !p.paid) throw new Error('الكتاب ده مش متاح للبيع دلوقتي.');
+      const orders = store.get('miftah_demo_orders', {});
+      const id = uid(), token = uid();
+      orders[id] = { id, token, slug, status: 'paid', amount: p.price, currency: 'EGP', title: p.title, cover_url: p.cover_url, book: p.book || {}, created_at: new Date().toISOString(), paid_at: new Date().toISOString(), downloads: 0, mode: 'test', ...buyer };
+      store.set('miftah_demo_orders', orders);
+      return { url: `order.html?o=${id}&t=${token}`, order: id, token };
+    },
+    async getOrder(id, token) {
+      const o = (store.get('miftah_demo_orders', {}))[id];
+      if (!o || o.token !== token) return null;
+      const p = demoPosts().find(x => x.slug === o.slug);
+      return { ...o, files: (p ? p.items : []).filter(i => i.type === 'file').map(i => ({ id: i.id, label: i.label, fileName: i.fileName })) };
+    },
+    async orderAction(id, token, action, item) {
+      const o = await this.getOrder(id, token);
+      if (!o) throw new Error('الطلب مش موجود.');
+      if (action === 'check') return { status: o.status };
+      const p = demoPosts().find(x => x.slug === o.slug);
+      const it = p && p.items.find(i => i.id === item);
+      return { url: it ? it.value : '', name: it ? it.fileName : '' };
+    },
+    async listOrders() { return Object.values(store.get('miftah_demo_orders', {})).map(o => ({ ...o, token: undefined })); },
   };
 
   // --------------------------------------------------------------- supabase
@@ -236,12 +261,58 @@
       return store.upload(ready, folder, onProgress);
     },
     // Books: the GitHub release, from the device or from a link (see storage.js).
-    async importFile(source, onProgress, onStage) {
+    // A book for sale goes to the PRIVATE repository instead (paid = true).
+    async importFile(source, onProgress, onStage, paid) {
       const store = window.GitHubStore;
       if (!store) throw new Error('حدّث الصفحة وحاول تاني.');
-      return store.importFile(source, onProgress, onStage);
+      if (paid && !store.paid) throw new Error('مخزن الكتب المدفوعة مش متظبط في config.js.');
+      return (paid ? store.paid : store).importFile(source, onProgress, onStage);
+    },
+
+    // ------------------------------------------------------------- store
+    // Payment and downloads go through the server functions (supabase/functions), which
+    // hold the Kashier keys. The browser never decides that an order is paid.
+    checkout: (slug, buyer) => callFunction('store-checkout', { slug, ...buyer }),
+    getOrder: (id, token) => rpcRead('get_order', { p_id: id, p_token: token }),
+    // device: a random id kept on this browser. The book downloads on one device only.
+    orderAction: (id, token, action, item) => callFunction('store-download', { order: id, token, action, item, device: deviceId() }),
+    async listOrders() {
+      return check(await sb().from('orders').select('id,title,amount,currency,status,name,email,phone,mode,downloads,created_at,paid_at,transaction_id,post_id')
+        .order('created_at', { ascending: false }).limit(1000));
     },
   };
+
+  function deviceId() {
+    let d = store.get('miftah_device', '');
+    if (!/^[0-9a-f-]{36}$/i.test(d)) { d = uid(); store.set('miftah_device', d); }
+    return d;
+  }
+
+  // A server function. Its error answers carry a message written for the visitor.
+  async function callFunction(name, body) {
+    const ctl = window.AbortController ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), 30000);
+    let res;
+    try {
+      res = await fetch(`${C.supabaseUrl}/functions/v1/${name}`, {
+        method: 'POST',
+        headers: { apikey: C.supabaseAnonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+        signal: ctl ? ctl.signal : undefined,
+      });
+    } catch (e) {
+      throw new Error('تعذر الاتصال. تأكد من الإنترنت وحاول تاني.');
+    } finally {
+      clearTimeout(timer);
+    }
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(out.message || 'حصلت مشكلة. حاول تاني بعد شوية.');
+      err.code = out.error;
+      throw err;
+    }
+    return out;
+  }
 
   window.DB = { isDemo: DEMO, ...(DEMO ? demo : live) };
 })();

@@ -8,7 +8,8 @@
   // Short link: 404.html turns /my-link into the post page.
   const linkFor = slug => new URL(encodeURIComponent(slug), new URL('./', location.href)).href;
   // These names already belong to real pages, so they can't be used as short links.
-  const RESERVED_SLUGS = ['index', 'link', 'admin', '404', 'assets', 'supabase', 'readme', 'files', 'functions'];
+  const RESERVED_SLUGS = ['index', 'link', 'admin', '404', 'assets', 'supabase', 'readme', 'files', 'functions',
+    'order', 'about', 'terms', 'privacy', 'refund', 'contact'];
   const googleReady = () => DB.isDemo || !!C.googleClientId;
   const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -35,6 +36,7 @@
     lastHash = location.hash;
     const h = location.hash.replace(/^#\/?/, '');
     if (h === 'new') return openEditor(blankDraft());
+    if (h === 'orders') return showOrders();
     if (h.startsWith('edit/')) {
       const p = await DB.getFull(h.slice(5));
       if (!p) { location.hash = '#/'; return; }
@@ -85,7 +87,10 @@
       ${S && !S.ready() ? storeNote('اربطه مرة واحدة علشان ترفع الكتب والصور من اللوحة.') : ''}
       <div class="page-head">
         <h1>${ic('unlock', 30)} روابط الفتح</h1>
-        <a class="btn primary" href="#/new">${ic('plus', 20)} رابط جديد</a>
+        <div class="head-acts">
+          <a class="btn" href="#/orders">${ic('chart', 20)} الطلبات والمبيعات</a>
+          <a class="btn primary" href="#/new">${ic('plus', 20)} رابط جديد</a>
+        </div>
       </div>
       <section class="stats" aria-label="الإحصائيات">
         <div class="stat hero-stat"><span>إجمالي المشاهدات</span><b>${fmtNum(views)}</b><small>${views.toLocaleString('en')} مشاهدة</small></div>
@@ -105,7 +110,7 @@
             <a class="row-main" href="#/edit/${esc(p.id)}">
               ${img ? `<img src="${esc(img)}" alt="">` : `<span class="thumb-ph">${ic('image', 20)}</span>`}
               <span class="row-title"><b dir="auto">${esc(p.title) || 'بدون عنوان'}</b>
-                <small class="tag ${p.status}">${STATUS[p.status]}</small>${expired ? '<small class="tag draft">منتهي</small>' : ''}</span>
+                <small class="tag ${p.status}">${STATUS[p.status]}</small>${p.paid ? `<small class="tag paid">${ic('lock', 12)} للبيع ${esc(window.fmtPrice(p.price))}</small>` : ''}${expired ? '<small class="tag draft">منتهي</small>' : ''}</span>
             </a>
             <span class="num views" data-label="المشاهدات">${ic('eye', 16)} ${fmtNum(p.views)}</span>
             <span class="num" data-label="فتحوا">${ic('unlock', 16)} ${fmtNum(p.unlocks)}</span>
@@ -155,6 +160,68 @@
     };
   }
 
+  // ----------------------------------------------------------------- orders
+  // Sales from Kashier. Only the server marks an order paid; this page just reads them.
+  let orderFilter = 'paid';
+  let orderMode = 'live';
+  async function showOrders() {
+    app.onclick = null;
+    app.innerHTML = '<div class="loading"></div>';
+    let orders;
+    try { orders = await DB.listOrders(); }
+    catch { app.innerHTML = `<div class="card empty-state"><h2>تعذر تحميل الطلبات</h2><p>اتأكد إن ملف supabase/store.sql اتشغّل في قاعدة البيانات.</p><a class="btn" href="#/">رجوع</a></div>`; return; }
+    if (!orders.some(o => o.mode === 'live') && orders.some(o => o.mode === 'test')) orderMode = orderMode === 'live' ? 'test' : orderMode;
+    renderOrders(orders);
+  }
+
+  function renderOrders(orders) {
+    const inMode = orders.filter(o => o.mode === orderMode);
+    const paid = inMode.filter(o => o.status === 'paid');
+    const money = paid.reduce((a, o) => a + Number(o.amount || 0), 0);
+    const month = new Date(); month.setDate(1); month.setHours(0, 0, 0, 0);
+    const monthMoney = paid.filter(o => new Date(o.paid_at || o.created_at) >= month).reduce((a, o) => a + Number(o.amount || 0), 0);
+    const shown = inMode.filter(o => orderFilter === 'all' || o.status === orderFilter);
+    const ST = { paid: ['مدفوع', 'public'], pending: ['لم يكتمل', 'draft'], failed: ['فشل', 'draft'], refunded: ['مسترجع', 'private'] };
+    const money2 = n => window.fmtPrice(Math.round(n * 100) / 100);
+    app.innerHTML = `
+      <div class="page-head">
+        <h1>${ic('chart', 30)} الطلبات والمبيعات</h1>
+        <div class="head-acts"><a class="btn" href="#/">رجوع</a></div>
+      </div>
+      <div class="seg filters" id="modeSeg">
+        <button data-mode="live" class="${orderMode === 'live' ? 'on' : ''}">المبيعات الحقيقية</button>
+        <button data-mode="test" class="${orderMode === 'test' ? 'on' : ''}">الوضع التجريبي</button>
+      </div>
+      <section class="stats" aria-label="المبيعات">
+        <div class="stat hero-stat"><span>إجمالي المبيعات</span><b>${esc(money2(money))}</b><small>${paid.length} طلب مدفوع</small></div>
+        <div class="stat"><span>مبيعات الشهر ده</span><b>${esc(money2(monthMoney))}</b></div>
+        <div class="stat"><span>طلبات لم تكتمل</span><b>${inMode.filter(o => o.status === 'pending').length}</b></div>
+        <div class="stat"><span>مرات التحميل</span><b>${paid.reduce((a, o) => a + (o.downloads || 0), 0)}</b></div>
+      </section>
+      <p class="muted orders-note">المبالغ هنا قبل عمولة بوابة الدفع. الطلب "لم يكتمل" معناه إن المشتري فتح صفحة الدفع وما دفعش (أو الدفع لسه بيتأكد).</p>
+      <div class="seg filters" id="orderSeg">
+        ${[['paid', 'المدفوعة'], ['pending', 'لم تكتمل'], ['refunded', 'المسترجعة'], ['all', 'الكل']].map(([k, l]) => `<button data-of="${k}" class="${orderFilter === k ? 'on' : ''}">${l}</button>`).join('')}
+      </div>
+      <div class="card list orders">
+        ${shown.length ? `<div class="row row-head"><span>الكتاب والمشتري</span><span>المبلغ</span><span>الحالة</span><span>التاريخ</span><span>تحميل</span></div>` : ''}
+        ${shown.map(o => `<div class="row">
+          <div class="row-main"><span class="row-title"><b dir="auto">${esc(o.title || 'كتاب')}</b>
+            <small class="buyer"><bdi>${esc(o.name)}</bdi> · <bdi dir="ltr">${esc(o.email)}</bdi> · <bdi dir="ltr">${esc(o.phone)}</bdi></small>
+            <small class="muted" dir="ltr">#${esc(o.id.slice(0, 8).toUpperCase())}${o.transaction_id ? ` · tx ${esc(o.transaction_id)}` : ''}</small></span></div>
+          <span class="num">${esc(window.fmtPrice(o.amount))}</span>
+          <span><small class="tag ${(ST[o.status] || ST.pending)[1]}">${(ST[o.status] || ST.pending)[0]}</small></span>
+          <span class="date">${new Date(o.paid_at || o.created_at).toLocaleString('ar-EG-u-nu-latn', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+          <span class="num">${ic('download', 16)} ${o.downloads || 0}</span>
+        </div>`).join('') || `<div class="empty-state">${ic('chart', 40)}<h2>لا توجد طلبات هنا</h2><p>أول ما حد يشتري كتاب هيظهر هنا.</p></div>`}
+      </div>`;
+    app.onclick = e => {
+      const m = e.target.closest('[data-mode]');
+      if (m) { orderMode = m.dataset.mode; renderOrders(orders); return; }
+      const f = e.target.closest('[data-of]');
+      if (f) { orderFilter = f.dataset.of; renderOrders(orders); }
+    };
+  }
+
   function confirmDialog(title, text, action, onYes) {
     const d = document.createElement('dialog');
     d.className = 'modal small';
@@ -176,6 +243,7 @@
       slug: window.randomSlug(), title: '', description: '', cover_url: '', status: 'public',
       steps: C.defaultChannel ? [{ id: newId(), action: 'yt_subscribe', target: C.defaultChannel, verify: googleReady() }] : [],
       theme: { bg: 'cover', accent: '#10e08a' }, expires_at: null, items: [],
+      paid: false, price: null, book: {},
     };
   }
 
@@ -190,8 +258,11 @@
     draft.theme = draft.theme || {};
     draft.items = draft.items || [];
     draft.steps = draft.steps || [];
+    draft.paid = !!draft.paid;
+    draft.book = draft.book || {};
     app.onclick = null;
     const t = draft.theme;
+    const book = draft.book;
 
     app.innerHTML = `
     <div class="page-head sticky">
@@ -213,9 +284,35 @@
           <div class="fld"><span>صورة البوست</span><div id="cover"></div></div>
         </section>
 
+        <section class="card pad sale-card">
+          <div class="sec-head"><div><h2>${ic('gift', 20)} مجاني ولا للبيع؟</h2>
+            <p class="muted">المجاني بيتفتح بالخطوات زي ما هو. المدفوع بيتباع بالفيزا والماستركارد عن طريق Kashier، والتحميل بيفتح بعد الدفع بس.</p></div></div>
+          <div class="seg sale-seg" id="saleSeg">
+            <button data-sale="free" class="${draft.paid ? '' : 'on'}">${ic('unlock', 18)} مجاني</button>
+            <button data-sale="paid" class="${draft.paid ? 'on' : ''}">${ic('lock', 18)} مدفوع (للبيع)</button>
+          </div>
+          <div id="saleFields" ${draft.paid ? '' : 'hidden'}>
+            <div class="sale-grid">
+              <label class="fld"><span>السعر بالجنيه المصري</span>
+                <input data-price type="number" inputmode="decimal" min="5" step="1" dir="ltr" value="${esc(draft.price ?? '')}" placeholder="مثال: 99"></label>
+              <label class="fld"><span>عدد الصفحات</span>
+                <input data-book="pages" type="number" inputmode="numeric" min="1" dir="ltr" value="${esc(book.pages ?? '')}" placeholder="مثال: 374"></label>
+              <label class="fld"><span>لغة الكتاب</span>
+                <select data-book="language">
+                  ${[['', 'اختار اللغة'], ...Object.entries(window.BOOK_LANGS)].map(([k, l]) => `<option value="${k}" ${(book.language || '') === k ? 'selected' : ''}>${l}</option>`).join('')}
+                </select></label>
+              <label class="fld"><span>حجم الملف (اختياري)</span>
+                <input data-book="size" value="${esc(book.size || '')}" placeholder="مثال: 12 ميجا" maxlength="30"></label>
+            </div>
+            <label class="fld"><span>المميزات اللي بتظهر في صفحة الكتاب (كل ميزة في سطر)</span>
+              <textarea data-book-features rows="4" dir="auto" placeholder="ملف PDF عالي الجودة&#10;تحميل فوري بعد الدفع مباشرة&#10;شرح بالصور خطوة بخطوة">${esc((book.features || []).join('\n'))}</textarea></label>
+            <p class="sale-note">${ic('lock', 16)} ملف الكتاب المدفوع بيترفع على <b>المخزن الخاص</b> (مستودع GitHub خاص)، ومحدش يقدر يحمّله غير اللي دفع.</p>
+          </div>
+        </section>
+
         <section class="card pad">
-          <div class="sec-head"><div><h2>المحتوى المقفول</h2>
-            <p class="muted">أضف أي عدد من الروابط والملفات والبرومبتات. المشاهد هيحصل عليها كلها مع بعض.</p></div></div>
+          <div class="sec-head"><div><h2 id="itemsTitle">${draft.paid ? 'ملف الكتاب' : 'المحتوى المقفول'}</h2>
+            <p class="muted" id="itemsHint">${draft.paid ? 'ارفع ملف الـ PDF اللي المشتري هيحمّله بعد الدفع.' : 'أضف أي عدد من الروابط والملفات والبرومبتات. المشاهد هيحصل عليها كلها مع بعض.'}</p></div></div>
           <div class="seg add-item">
             <button data-add="url">${ic('link', 18)} رابط موقع</button>
             <button data-add="file">${ic('file', 18)} ملف PDF</button>
@@ -225,7 +322,7 @@
           <div id="items" class="sort-list"></div>
         </section>
 
-        <section class="card pad">
+        <section class="card pad" id="stepsCard" ${draft.paid ? 'hidden' : ''}>
           <div class="sec-head"><div><h2>الإجراءات المطلوبة</h2>
             <p class="muted">اللي لازم المشاهد يعمله علشان يفتح القفل، بنفس الترتيب. اسحب لإعادة الترتيب.</p></div></div>
           ${C.defaultChannel ? `<div class="quick"><span class="muted">إضافة سريعة</span>
@@ -516,9 +613,17 @@
         // A link is the fastest way: GitHub downloads it itself, whatever the owner's connection.
         const fromLink = `<div class="link-import"><input data-item-link dir="ltr" inputmode="url" placeholder="أو حط رابط الكتاب: Google Drive أو Dropbox أو MediaFire">
             <button type="button" class="btn sm primary" data-item-link-go>${ic('download', 16)} رفع من الرابط</button></div>`;
+        // A book for sale must sit in the private store; a file still in the public one gets
+        // a button that copies it over (GitHub fetches it itself, nothing goes through this device).
+        const S = window.GitHubStore;
+        const where = !draft.paid || !it.value || !S ? ''
+          : S.isPaidFile(it.value)
+            ? `<p class="where ok">${ic('lock', 15)} في المخزن الخاص، محدش يحمّله غير اللي دفع.</p>`
+            : `<p class="where bad">${ic('unlock', 15)} الملف ده في المخزن العام وأي حد يقدر يحمّله.
+                <button type="button" class="btn sm primary" data-item-private>${ic('lock', 15)} انقله للمخزن الخاص</button></p>`;
         field = it.value
           ? `<div class="file-chosen">${ic('file', 18)}<span dir="auto">${esc(it.fileName || 'ملف')}</span>
-              <label class="btn sm">تغيير<input type="file" hidden data-item-file></label></div>${fromLink}`
+              <label class="btn sm">تغيير<input type="file" hidden data-item-file></label></div>${where}${fromLink}`
           : `<label class="drop small">${ic('upload', 22)}<b>اختار ملف PDF أو أي ملف آخر (لحد 1.9 جيجا)</b><input type="file" hidden data-item-file></label>${fromLink}`;
       }
       return `<div class="sort-row item-row" data-id="${esc(it.id)}">
@@ -659,7 +764,32 @@
         s.label = el.value; touch();
       } else if (el.id === 'expires') {
         draft.expires_at = el.value ? new Date(el.value).toISOString() : null; dirty = true;
+      } else if ('price' in el.dataset) {
+        draft.price = el.value === '' ? null : Number(el.value); touch();
+      } else if (el.dataset.book) {
+        const k = el.dataset.book;
+        draft.book[k] = k === 'pages' ? (el.value === '' ? null : Math.round(Number(el.value))) : el.value;
+        touch();
+      } else if ('bookFeatures' in el.dataset) {
+        draft.book.features = el.value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, 12); touch();
       }
+    });
+
+    // Free (steps) or for sale (Kashier). Switching keeps everything, so it can be switched back.
+    function setSale(paid) {
+      draft.paid = paid;
+      document.querySelectorAll('#saleSeg button').forEach(b => b.classList.toggle('on', (b.dataset.sale === 'paid') === paid));
+      document.getElementById('saleFields').hidden = !paid;
+      document.getElementById('stepsCard').hidden = paid;
+      form.classList.toggle('is-paid', paid);
+      document.getElementById('itemsTitle').textContent = paid ? 'ملف الكتاب' : 'المحتوى المقفول';
+      document.getElementById('itemsHint').textContent = paid ? 'ارفع ملف الـ PDF اللي المشتري هيحمّله بعد الدفع.' : 'أضف أي عدد من الروابط والملفات والبرومبتات. المشاهد هيحصل عليها كلها مع بعض.';
+      touch(); renderItems();
+    }
+    form.classList.toggle('is-paid', draft.paid);
+    document.getElementById('saleSeg').addEventListener('click', e => {
+      const b = e.target.closest('[data-sale]');
+      if (b) setSale(b.dataset.sale === 'paid');
     });
 
     form.addEventListener('change', async e => {
@@ -682,17 +812,19 @@
     });
 
     // Puts a book in the release, from the device or from a link (DB.importFile).
-    async function importItemFile(it, source) {
+    async function importItemFile(it, source, moving) {
       const isLink = typeof source === 'string';
       if (!(await storeReady())) return;
       uploads[it.id] = { done: 0, total: isLink ? 0 : source.size, note: isLink ? 'بيبعت الرابط لـ GitHub...' : '' };
       renderItems();
+      const keepName = it.fileName;
       try {
         const out = await DB.importFile(source,
           (d, t, s) => updateBar(it.id, d, t, s),
-          note => { uploads[it.id] = { ...uploads[it.id], note }; updateBar(it.id, uploads[it.id].done, uploads[it.id].total, uploads[it.id].left); });
+          note => { uploads[it.id] = { ...uploads[it.id], note }; updateBar(it.id, uploads[it.id].done, uploads[it.id].total, uploads[it.id].left); },
+          draft.paid);
         it.value = out.url;
-        it.fileName = out.name || (isLink ? 'file' : source.name);
+        it.fileName = (moving && keepName) || out.name || (isLink ? 'file' : source.name);
         if (!it.label) it.label = it.fileName.replace(/\.[^.]+$/, '');
         touch();
         toast('الملف جاهز. متنساش تحفظ البوست.', 'ok');
@@ -701,6 +833,12 @@
       renderItems();
     }
     form.addEventListener('click', e => {
+      const mv = e.target.closest('[data-item-private]');
+      if (mv) {
+        const it = draft.items.find(x => x.id === mv.closest('.sort-row').dataset.id);
+        if (it && /^https:\/\//.test(it.value)) importItemFile(it, it.value, true);
+        return;
+      }
       const go = e.target.closest('[data-item-link-go]');
       if (!go) return;
       const row = go.closest('.sort-row');
@@ -821,8 +959,20 @@
     };
     if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(draft.slug)) return fail('الرابط المختصر لازم يكون حرفين على الأقل، إنجليزي وأرقام وشرطات فقط.', '[data-slug]');
     if (RESERVED_SLUGS.includes(draft.slug)) return fail('الاسم ده محجوز للموقع. اختار اسم تاني للرابط المختصر.', '[data-slug]');
+    if (draft.paid) {
+      const price = Number(draft.price);
+      if (!(price >= 5 && price <= 100000)) return fail('اكتب سعر الكتاب بالجنيه (5 جنيه على الأقل).', '[data-price]');
+      draft.price = Math.round(price * 100) / 100;
+    }
     if (draft.status === 'draft') return true;
     if (!draft.title.trim()) return fail('اكتب عنوان البوست.', '[data-f=title]');
+    if (draft.paid) {
+      const files = draft.items.filter(i => i.type === 'file');
+      if (!files.length) return fail('ارفع ملف الكتاب (PDF) قبل ما تنشره للبيع.', '.add-item [data-add=file]');
+      const S = window.GitHubStore;
+      const open = files.find(f => f.value && S && !S.isPaidFile(f.value));
+      if (open && !DB.isDemo) return fail(`ملف "${open.label || open.fileName || 'الكتاب'}" لسه في المخزن العام. اضغط "انقله للمخزن الخاص" الأول.`, `#items [data-id="${open.id}"]`);
+    }
     if (!draft.items.length) return fail('أضف عنصر واحد على الأقل في المحتوى المقفول.', '.add-item button');
     for (const it of draft.items) {
       const row = `#items [data-id="${it.id}"]`;
@@ -831,7 +981,7 @@
       if (it.type === 'article' && !it.value.trim()) return fail('الصق نص المقالة.', `${row} [data-item=value]`);
       if (it.type === 'file' && !it.value) return fail('ارفع الملف أو احذف العنصر.', row);
     }
-    for (const s of draft.steps) {
+    for (const s of (draft.paid ? [] : draft.steps)) {
       const a = window.getAction(s.action);
       const sel = `#steps [data-id="${s.id}"] [data-step-target]`;
       if (!s.target.trim()) return fail(`اكمل بيانات إجراء "${a.label}".`, sel);
@@ -929,7 +1079,7 @@
       <details class="store-help"><summary>إزاي أعمل المفتاح؟</summary><ol class="install-steps">
         <li>افتح <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">صفحة المفاتيح على GitHub</a> وانت داخل بحساب <b dir="ltr">${esc(C.files.owner)}</b>.</li>
         <li>في <b>Token name</b> اكتب: لوحة الموقع. وفي <b>Expiration</b> اختار أطول مدة.</li>
-        <li>في <b>Repository access</b> اختار <b>Only select repositories</b> وبعدين المستودع <b dir="ltr">${esc(C.files.repo)}</b>.</li>
+        <li>في <b>Repository access</b> اختار <b>Only select repositories</b> وبعدين المستودع <b dir="ltr">${esc(C.files.repo)}</b>${C.paidFiles ? ` والمستودع الخاص <b dir="ltr">${esc(C.paidFiles.repo)}</b> (بتاع الكتب المدفوعة)` : ''}.</li>
         <li>في <b>Permissions</b> افتح <b>Repository permissions</b>، وخلي <b>Contents</b> على <b>Read and write</b>.</li>
         <li>اضغط <b>Generate token</b>، وانسخ المفتاح والصقه في الخانة اللي فوق.</li>
       </ol><p class="muted">المفتاح بيتحفظ على الجهاز ده بس، ومحدش غيرك يقدر يشوفه.</p></details>

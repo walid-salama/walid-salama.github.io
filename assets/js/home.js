@@ -26,6 +26,7 @@
   $('footSocial').innerHTML = socials.map(iconLink).join('');
   $('footContact').innerHTML = contacts.map(iconLink).join('');
   $('copy').textContent = `© ${new Date().getFullYear()} ${C.siteName}. كل الحقوق محفوظة.`;
+  if ($('footPay')) $('footPay').innerHTML = `${window.payLogos()}<span>الدفع الآمن بالفيزا والماستركارد عن طريق بوابة Kashier</span>`;
 
   // --------------------------------------------------------------- posts
   const grid = $('grid');
@@ -42,33 +43,46 @@
 
   const href = p => `/${encodeURIComponent(p.slug)}`;
   // The blurred copy fills the frame, so a picture of any shape shows whole with no empty bars.
+  // A book for sale shows as a real book with its price; free content keeps its picture.
   const media = p => {
     const img = window.safeImg(p.cover_url);
+    if (p.paid) {
+      return `<div class="pc-media pc-book">
+        ${img ? `<img class="pc-blur" src="${esc(img)}" alt="" aria-hidden="true" loading="lazy">` : ''}
+        ${window.book3d(img)}
+        <span class="pc-badge paid">${esc(window.fmtPrice(p.price))}</span></div>`;
+    }
     return img ? `<div class="pc-media">
         <img class="pc-blur" src="${esc(img)}" alt="" aria-hidden="true" loading="lazy">
         <img class="pc-img" src="${esc(img)}" alt="" loading="lazy">
         <span class="pc-badge">${ic('lock', 14)} مجاني</span></div>` : '';
   };
   const meta = p => `<div class="post-meta">
-      ${p.created_at ? `<span>${ic('clock', 15)} ${window.fmtDate(p.created_at)}</span>` : ''}
+      ${p.paid && Number(p.pages) > 0 ? `<span>${ic('article', 15)} ${Number(p.pages).toLocaleString('en')} صفحة</span>` : ''}
+      ${!p.paid && p.created_at ? `<span>${ic('clock', 15)} ${window.fmtDate(p.created_at)}</span>` : ''}
       <span>${ic('eye', 15)} ${window.fmtNum(p.views)} مشاهدة</span>
-      <span>${ic('unlock', 15)} ${window.fmtNum(p.unlocks)} فتح</span></div>`;
+      <span>${ic(p.paid ? 'download' : 'unlock', 15)} ${window.fmtNum(p.unlocks)} ${p.paid ? 'تحميل' : 'فتح'}</span></div>`;
+  const cta = p => (p.paid
+    ? `<span class="post-cta buy">${ic('lock', 16)} اشترِ الآن <b>${esc(window.fmtPrice(p.price))}</b></span>`
+    : `<span class="post-cta">افتح المحتوى ${ic('arrow', 16)}</span>`);
 
-  const card = p => `<a class="post-card ${window.safeImg(p.cover_url) ? '' : 'no-img'}" href="${href(p)}">
+  const card = p => `<a class="post-card ${p.paid ? 'is-paid' : ''} ${window.safeImg(p.cover_url) || p.paid ? '' : 'no-img'}" href="${href(p)}">
       ${media(p)}
       <div class="post-body">
         <h3 dir="auto">${esc(p.title)}</h3>
         ${meta(p)}
-        <span class="post-cta">افتح المحتوى ${ic('arrow', 16)}</span>
+        ${cta(p)}
       </div></a>`;
 
-  const featured = p => `<a class="featured" href="${href(p)}">
+  const featured = p => `<a class="featured ${p.paid ? 'is-paid' : ''}" href="${href(p)}">
       ${media(p)}
       <div class="featured-body">
-        <span class="featured-tag">الأحدث</span>
+        <span class="featured-tag">${p.paid ? 'كتاب مميز' : 'الأحدث'}</span>
         <h3 dir="auto">${esc(p.title)}</h3>
         ${meta(p)}
-        <span class="btn primary featured-cta">${ic('unlock', 18)} افتح المحتوى مجانًا</span>
+        ${p.paid
+          ? `<span class="btn primary featured-cta buy">${ic('lock', 18)} اشترِ الآن · ${esc(window.fmtPrice(p.price))}</span>`
+          : `<span class="btn primary featured-cta">${ic('unlock', 18)} افتح المحتوى مجانًا</span>`}
       </div></a>`;
 
   // Most viewed, beside the newest post.
@@ -144,13 +158,28 @@
     });
   }
 
+  // Search and the free / paid tabs work together.
+  let kind = 'all';
+  const apply = () => {
+    const q = $('search').value.trim().toLowerCase();
+    const list = posts.filter(p => (kind === 'all' || (kind === 'paid') === !!p.paid)
+      && (!q || String(p.title).toLowerCase().includes(q)));
+    shown = PAGE;
+    show(list, !!q || kind !== 'all');
+  };
   show(posts, false);
   if (posts.length > 3) {
     $('searchBox').hidden = false;
-    $('search').addEventListener('input', e => {
-      const q = e.target.value.trim().toLowerCase();
-      shown = PAGE;
-      show(q ? posts.filter(p => String(p.title).toLowerCase().includes(q)) : posts, !!q);
+    $('search').addEventListener('input', apply);
+  }
+  if (posts.some(p => p.paid) && posts.some(p => !p.paid)) {
+    $('kindFilter').hidden = false;
+    $('kindFilter').addEventListener('click', e => {
+      const b = e.target.closest('[data-kind]');
+      if (!b) return;
+      kind = b.dataset.kind;
+      $('kindFilter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      apply();
     });
   }
 })();

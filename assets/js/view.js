@@ -239,8 +239,93 @@
     </article>`;
   }
 
+  // ------------------------------------------------------------ books for sale
+  const LANGS = { ar: 'العربية', en: 'الإنجليزية', 'ar-en': 'العربية والإنجليزية', fr: 'الفرنسية' };
+  window.BOOK_LANGS = LANGS;
+  const DEFAULT_FEATURES = ['ملف PDF عالي الجودة', 'تحميل فوري بعد الدفع مباشرة', 'تقراه على الموبايل أو الكمبيوتر أو التابلت'];
+
+  // 149 -> "149 ج.م", 149.5 -> "149.50 ج.م"
+  window.fmtPrice = p => {
+    const n = Number(p) || 0;
+    return `${Number.isInteger(n) ? n : n.toFixed(2)} ${(window.SITE_CONFIG.store || {}).currency || 'ج.م'}`;
+  };
+
+  // Card brands the store accepts, drawn in place (no outside images).
+  window.payLogos = () => `<span class="pay-logos" aria-label="فيزا وماستركارد">
+    <svg class="pay-visa" viewBox="0 0 64 40" role="img" aria-label="Visa"><rect width="64" height="40" rx="6" fill="#fff"/><text x="32" y="27" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-size="17" font-weight="900" font-style="italic" fill="#1a1f71">VISA</text></svg>
+    <svg class="pay-mc" viewBox="0 0 64 40" role="img" aria-label="Mastercard"><rect width="64" height="40" rx="6" fill="#fff"/><circle cx="26" cy="20" r="11" fill="#eb001b"/><circle cx="38" cy="20" r="11" fill="#f79e1b"/><path d="M32 10.8a11 11 0 0 1 0 18.4 11 11 0 0 1 0-18.4z" fill="#ff5f00"/></svg>
+  </span>`;
+
+  // The cover as a real book: front, page edges and spine, slightly turned.
+  window.book3d = (cover, big) => `<div class="book3d ${big ? 'big' : ''}">
+      <div class="book3d-inner">
+        ${cover ? `<img class="b-front" src="${esc(cover)}" alt="" loading="lazy">` : `<div class="b-front b-blank">${ic('file', 40)}</div>`}
+        <span class="b-pages" aria-hidden="true"></span><span class="b-back" aria-hidden="true"></span>
+      </div></div>`;
+
+  window.bookFacts = function (book) {
+    const b = book || {};
+    const facts = [];
+    if (Number(b.pages) > 0) facts.push(['article', 'عدد الصفحات', `${Number(b.pages).toLocaleString('en')} صفحة`]);
+    if (b.language) facts.push(['text', 'اللغة', LANGS[b.language] || b.language]);
+    facts.push(['file', 'الصيغة', b.format || 'PDF']);
+    if (b.size) facts.push(['download', 'حجم الملف', b.size]);
+    facts.push(['clock', 'الاستلام', 'تحميل فوري بعد الدفع']);
+    return facts;
+  };
+
+  // state: {buying, preview}
+  window.renderBookPage = function (post, state) {
+    const s = state || {};
+    const theme = post.theme || {};
+    const b = post.book || {};
+    const cover = safeImg(post.cover_url);
+    const features = (Array.isArray(b.features) && b.features.filter(Boolean).length ? b.features.filter(Boolean) : DEFAULT_FEATURES);
+    const chips = [
+      theme.hideViews ? '' : `<span class="chip">${ic('eye', 15)}<b>${window.fmtNum(post.views)}</b> مشاهدة</span>`,
+      theme.hideUnlocks ? '' : `<span class="chip">${ic('download', 15)}<b>${window.fmtNum(post.unlocks)}</b> حمّلوا الكتاب</span>`,
+    ].join('');
+    const facts = window.bookFacts(b).map(([icon, k, v]) =>
+      `<li><i>${ic(icon, 18)}</i><span><small>${esc(k)}</small><b dir="auto">${esc(v)}</b></span></li>`).join('');
+    return `<article class="bk-page" style="--accent:${esc(theme.accent || '#10e08a')}">
+      <section class="bk-hero">
+        <div class="bk-visual">${window.book3d(cover, true)}</div>
+        <div class="bk-info">
+          <span class="bk-kicker">${ic('file', 15)} كتاب PDF · للبيع</span>
+          <div class="lk-head"><h1 dir="auto">${esc(post.title) || 'عنوان الكتاب'}</h1>
+            <button class="round" data-act="share" aria-label="مشاركة الرابط">${ic('share', 20)}</button></div>
+          <div class="chips">${chips}</div>
+          <ul class="bk-facts">${facts}</ul>
+          <div class="bk-buy">
+            <div class="bk-price"><span>السعر</span><b>${esc(window.fmtPrice(post.price))}</b><small>دفعة واحدة · من غير اشتراك</small></div>
+            <button class="buy-btn" data-act="buy" ${s.buying ? 'disabled' : ''}>
+              ${s.buying ? '<span class="spinner" aria-hidden="true"></span> جاري تجهيز الدفع...' : `${ic('lock', 20)} اشترِ الآن`}</button>
+            <div class="bk-pay">${window.payLogos()}<small>دفع آمن بالفيزا أو الماستركارد</small></div>
+          </div>
+        </div>
+      </section>
+      ${post.description ? `<section class="bk-sec"><h2>عن الكتاب</h2><p class="bk-desc" dir="auto">${esc(post.description)}</p></section>` : ''}
+      <section class="bk-sec"><h2>هتحصل على إيه؟</h2>
+        <ul class="bk-feat">${features.map(f => `<li>${ic('check', 18)}<span dir="auto">${esc(f)}</span></li>`).join('')}</ul></section>
+      <section class="bk-sec"><h2>إزاي تشتري؟</h2>
+        <ol class="bk-steps">
+          <li><b>اضغط "اشترِ الآن"</b><span>واكتب اسمك وبريدك ورقم موبايلك.</span></li>
+          <li><b>ادفع بالكارت</b><span>فيزا أو ماستركارد، على صفحة الدفع الآمنة لبوابة Kashier.</span></li>
+          <li><b>حمّل الكتاب فورًا</b><span>أول ما الدفع يتأكد، صفحة التحميل الخاصة بيك هتفتح لوحدها.</span></li>
+        </ol></section>
+      <section class="bk-sec bk-faq"><h2>أسئلة شائعة</h2>
+        <details><summary>هل الدفع آمن؟</summary><p>أيوه. الدفع بيتم على صفحة بوابة الدفع Kashier المرخّصة في مصر، وبيانات الكارت مش بتوصل لموقعنا خالص.</p></details>
+        <details><summary>هستلم الكتاب إزاي؟</summary><p>بعد الدفع بتفتح لك صفحة تحميل خاصة بطلبك. <b>التحميل مرة واحدة بس وعلى جهاز واحد</b>، فحمّله وانت النت عندك كويس. ولو التحميل وقف، تقدر تعيده من نفس الجهاز خلال 15 دقيقة.</p></details>
+        <details><summary>ينفع أرجّع الكتاب؟</summary><p>الكتاب ملف PDF، وأول ما يتحمّل البيع بيبقى نهائي. عدم الإعجاب بالكتاب مش سبب للاسترجاع. الاسترجاع بيكون بس لو اتخصم منك المبلغ مرتين، أو الملف بايظ، أو الكتاب ما وصلكش. التفاصيل في <a href="/refund.html">سياسة الاسترجاع</a>.</p></details>
+        <details><summary>لو حصلت مشكلة في الدفع أو التحميل؟</summary><p>تواصل معانا وابعت رقم الطلب، وهنحل المشكلة.</p></details>
+      </section>
+      <p class="bk-legal"><a href="/terms.html">الشروط والأحكام</a> · <a href="/refund.html">سياسة الاسترجاع</a> · <a href="/privacy.html">سياسة الخصوصية</a> · <a href="/contact.html">تواصل معنا</a></p>
+    </article>`;
+  };
+
   // state: {done:Set, clicked:Set, msg:{}, busy, items, unlocking, preview}
   window.renderLinkCard = function (post, state) {
+    if (post.paid) return window.renderBookPage(post, state);
     const s = Object.assign({ done: new Set(), clicked: new Set(), checking: new Set(), msg: {}, busy: null, items: null, unlocking: false }, state);
     const theme = post.theme || {};
     const steps = post.steps || [];

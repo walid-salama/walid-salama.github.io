@@ -3,16 +3,19 @@
 // month. The owner connects once with a GitHub key kept in this browser only.
 (function () {
   const C = window.SITE_CONFIG;
-  const R = C.files;
-  const API = `https://api.github.com/repos/${R.owner}/${R.repo}`;
   const KEY = 'miftah_gh_token';
   const MAX_BYTES = 200 * 1024 * 1024; // big files are stored in pieces, see upload()
 
+  // One key for both repositories (the site's, and the private one for books for sale).
   const token = {
     get() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } },
     set(v) { try { localStorage.setItem(KEY, v.trim()); } catch (e) {} },
     clear() { try { localStorage.removeItem(KEY); } catch (e) {} },
   };
+
+  // The same tools for any repository: R = {owner, repo, branch, dir, base}.
+  function makeStore(R) {
+  const API = `https://api.github.com/repos/${R.owner}/${R.repo}`;
 
   // One GitHub API call. Uses XMLHttpRequest so a large upload can report its progress.
   function gh(method, path, body, onProgress) {
@@ -321,6 +324,9 @@
     return { ok: false, definite, text: definite ? friendly(lastError) : 'النت ضعيف دلوقتي. حاول تاني.' };
   }
 
+  return { check, upload, importFile, repo: `${R.owner}/${R.repo}` };
+  } // makeStore
+
   // Shrinks a picture before upload: big phone photos become a fraction of their size,
   // which is what visitors download every time they open a page.
   async function compressImage(file, maxSide) {
@@ -354,5 +360,10 @@
 
   const isSupabaseFile = url => /\.supabase\.co\/storage\/v1\/object\/public\//i.test(String(url || ''));
 
-  window.GitHubStore = { token, check, upload, compressImage, isSupabaseFile, importFile, ready: () => !!token.get() };
+  const site = makeStore(C.files);
+  // Books for sale: a PRIVATE repository, so nobody can download them without paying.
+  const paid = C.paidFiles ? makeStore(C.paidFiles) : null;
+  // A paid book's file lives in the private repository's release (and only there).
+  const isPaidFile = url => !!C.paidFiles && String(url || '').startsWith(`https://github.com/${C.paidFiles.owner}/${C.paidFiles.repo}/releases/download/`);
+  window.GitHubStore = { token, ...site, paid, isPaidFile, compressImage, isSupabaseFile, ready: () => !!token.get() };
 })();
