@@ -6,7 +6,7 @@
 <title>أبو حنين القناص</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hhqxhdgylnjxkqqcowxk.supabase.co https://abu-hanin.pages.dev https://walid-salama.github.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<meta name="description" content="كتب وأدوات وبرومبتات مجانية من أبو حنين القناص، تفتحها بخطوة واحدة.">
+<meta name="description" content="متجر أبو حنين القناص لكتب PDF في كل المجالات: كتب مجانية، وكتب مدفوعة تشتريها بالفيزا أو الماستركارد وتحمّلها فورًا.">
 <link rel="icon" type="image/jpeg" href="/assets/app/logo.jpg">
 <style>html { background: #0d0f12; color: #f6f8fa; }</style>
 <script>
@@ -27,13 +27,17 @@
   <section class="author">
     <div class="author-ring"><img class="author-avatar" src="/assets/app/logo.jpg" alt="أبو حنين القناص" width="128" height="128"></div>
     <h1>أبو حنين القناص</h1>
-    <p class="author-bio" id="bio">منشئ محتوى فيديو. كتب وأدوات وبرومبتات مجانية، تفتحها بخطوة واحدة.</p>
+    <p class="store-tag"><span class="tag-free">كتب مجانية</span><span class="tag-paid">كتب مدفوعة</span><span>PDF في كل المجالات</span></p>
+    <p class="author-bio" id="bio">متجر كتب PDF في كل المجالات: كتب مجانية تفتحها بخطوة واحدة، وكتب مدفوعة تشتريها بالفيزا أو الماستركارد وتحمّلها فورًا.</p>
     <div class="author-social" id="authorSocial"></div>
   </section>
   <section class="feed" aria-labelledby="feedTitle">
     <div class="feed-head">
-      <h2 id="feedTitle">أحدث المحتوى <small id="count"></small></h2>
+      <h2 id="feedTitle">أحدث الكتب والمحتوى <small id="count"></small></h2>
       <label class="search" hidden id="searchBox"><input id="search" type="search" placeholder="دوّر على كتاب أو أداة..." aria-label="بحث في المحتوى"></label>
+    </div>
+    <div class="seg kind-filter" id="kindFilter" role="tablist" hidden>
+      <button class="on" data-kind="all">الكل</button><button data-kind="free">مجاني</button><button data-kind="paid">مدفوع</button>
     </div>
     <div class="top-row">
       <div id="featured"></div>
@@ -52,9 +56,13 @@
       <img class="logo-mark" src="/assets/app/logo.jpg" alt="">
       <div><b>أبو حنين القناص</b><p id="footBio"></p></div>
     </div>
-    <div class="foot-col"><h3>تابعني</h3><div class="foot-social" id="footSocial"></div></div>
-    <div class="foot-col"><h3>للتواصل</h3><div class="foot-social" id="footContact"></div></div>
+    <div class="foot-col"><h3>المتجر</h3><nav class="foot-links" aria-label="صفحات المتجر">
+      <a href="/about.html">من نحن</a><a href="/terms.html">الشروط والأحكام</a><a href="/terms.html#delivery">سياسة التسليم</a>
+      <a href="/refund.html">سياسة الاسترجاع</a><a href="/privacy.html">سياسة الخصوصية</a><a href="/contact.html">تواصل معنا</a><a href="/order.html">مشترياتي</a></nav></div>
+    <div class="foot-col"><h3>تابعني</h3><div class="foot-social" id="footSocial"></div>
+      <h3 class="foot-sub">للتواصل</h3><div class="foot-social" id="footContact"></div></div>
   </div>
+  <div class="foot-pay" id="footPay"></div>
   <p class="foot-copy" id="copy">أبو حنين القناص</p>
 </footer>
 <script src="/assets/js/config.js"></script>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>طلبك | أبو حنين القناص</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://hhqxhdgylnjxkqqcowxk.supabase.co https://abu-hanin.pages.dev https://walid-salama.github.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
+<!-- The order address holds the buyer's secret token: never sent on to other sites. -->
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/jpeg" href="/assets/app/logo.jpg">
+<style>html { background: #0d0f12; color: #f6f8fa; }</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@500;600;700;800;900&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body class="order-page">
+<header class="lk-brand"><a class="logo" href="/"><img class="logo-mark" src="/assets/app/logo.jpg" alt=""><span>أبو حنين القناص</span></a></header>
+<main class="order-root" id="app"><div class="loading" aria-label="جاري التحميل"></div></main>
+<footer class="mini-foot"><a href="/terms.html">الشروط والأحكام</a><a href="/refund.html">سياسة الاسترجاع</a><a href="/privacy.html">الخصوصية</a><a href="/contact.html">تواصل معنا</a></footer>
+<noscript><p style="text-align:center;padding:24px">افتح الصفحة في متصفح Chrome أو Safari علشان تشتغل.</p></noscript>
+<script src="/assets/js/config.js"></script>
+<script src="/assets/js/actions.js"></script>
+<script src="/assets/js/view.js"></script>
+<script src="/assets/js/data.js"></script>
+<script src="/assets/js/order.js"></script>
+<script>
+  if (!window.PAGE_STARTED) {
+    document.getElementById('app').innerHTML = '<div class="empty-state card"><h1>تعذر تحميل الصفحة</h1><p>الإنترنت ضعيف أو المتصفح قديم. حاول تاني.</p><a class="btn primary" href="">حاول تاني</a></div>';
+  }
+</script>
+</body>
+</html>

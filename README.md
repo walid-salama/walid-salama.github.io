@@ -46,6 +46,30 @@
 2. من **Settings > Pages** اختار **Deploy from a branch**، والفرع `main`، والمجلد `/ (root)`، ثم **Save**.
 3. بعد دقيقة هيكون موقعك على `https://USERNAME.github.io/REPO/`، ولوحة التحكم على `.../admin.html`.
 
+## 4) الكتب المدفوعة (Kashier)
+
+كل بوست يقدر يبقى **مجاني** (بالخطوات زي ما هو) أو **مدفوع** (من خانة "مجاني ولا للبيع؟" في المحرر).
+
+- **قاعدة البيانات:** شغّل `supabase/store.sql` في SQL Editor بعد `setup.sql`. الملف بيضيف السعر وبيانات الكتاب وجدول الطلبات، ومش بيغيّر أي حاجة في البوستات المجانية.
+- **ملفات الكتب المدفوعة:** بتترفع على مستودع GitHub **خاص** اسمه `paid-books` (الإعداد `paidFiles` في `config.js`). المستودع ده محتاج ملف `.github/workflows/import-file.yml` (نسخة منه في فولدر `paid-books` على سطح المكتب)، ومفتاح لوحة التحكم لازم يكون له صلاحية عليه هو كمان.
+- **دوال السيرفر** (Supabase > Edge Functions، وكلها من غير Verify JWT):
+  - `store-checkout`: بيعمل الطلب ويفتح صفحة الدفع بتاعة Kashier. السعر بيتاخد من قاعدة البيانات بس.
+  - `kashier-webhook`: Kashier بيبعت عليه نتيجة الدفع. هو بس اللي بيعلّم الطلب إنه مدفوع، وده بعد ما يتأكد من التوقيع والمبلغ.
+  - `store-download`: بيدّي المشتري رابط تحميل صالح لدقايق بس، من المستودع الخاص.
+- **الأسرار** (Edge Functions > Secrets)، وصاحب الموقع هو اللي يدخّلها بنفسه:
+  - `KASHIER_MODE` (`test` أو `live`)
+  - `KASHIER_MID`
+  - `KASHIER_API_KEY`
+  - `KASHIER_SECRET_KEY`
+  - `SITE_URL`
+  - `BOOKS_REPO` (`walid-salama/paid-books`)
+  - `BOOKS_GITHUB_TOKEN`: مفتاح قراءة بس على `paid-books`.
+- **صفحات المشتري والسياسات:**
+  - `order.html`: صفحة الطلب والتحميل، ومن غير رقم طلب بتعرض مشترياتي.
+  - صفحات السياسات: `about.html` و`terms.html` و`privacy.html` و`refund.html` و`contact.html`.
+  - بيانات التواصل بتتكتب في `legal` في `config.js`.
+- **الطلبات والمبيعات:** من زر "الطلبات والمبيعات" في لوحة التحكم.
+
 ## الإعدادات
 
 في `assets/js/config.js` تقدر تغيّر:
