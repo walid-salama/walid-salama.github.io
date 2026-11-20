@@ -366,8 +366,8 @@
   }
 
   // ---------------------------------------------------------------- buying
-  // The buyer's details, then Kashier's payment page. The order id and its secret token
-  // are kept on this device, so the download page can always be found again.
+  // The order id and its secret token are kept on this device, so the download page can
+  // always be found again.
   const ORDERS_KEY = 'miftah_my_orders';
   function rememberOrder(o) {
     const list = window.store.get(ORDERS_KEY, []).filter(x => x.id !== o.id);
@@ -375,61 +375,45 @@
     window.store.set(ORDERS_KEY, list.slice(0, 50));
   }
 
-  function openBuyForm() {
-    const esc = window.esc, ic = window.uiIcon;
-    const saved = window.store.get('miftah_buyer', {});
-    const d = document.createElement('dialog');
-    d.className = 'modal buy-modal';
-    d.innerHTML = `<form method="dialog" class="buy-form" novalidate>
-      <div class="modal-head"><h2>${ic('lock', 22)} إتمام الشراء</h2><button type="button" class="round" data-close aria-label="إغلاق">${ic('x', 20)}</button></div>
-      <div class="buy-sum">${window.book3d(window.safeImg(post.cover_url))}
-        <div><b dir="auto">${esc(post.title)}</b><span>${esc(window.fmtPrice(post.price))}</span></div></div>
-      <label class="fld"><span>الاسم</span><input name="name" autocomplete="name" maxlength="80" required value="${esc(saved.name || '')}"></label>
-      <label class="fld"><span>البريد الإلكتروني</span><input name="email" type="email" dir="ltr" autocomplete="email" maxlength="120" required value="${esc(saved.email || '')}"></label>
-      <label class="fld"><span>رقم الموبايل</span><input name="phone" type="tel" dir="ltr" inputmode="tel" autocomplete="tel" maxlength="20" required placeholder="01xxxxxxxxx" value="${esc(saved.phone || '')}"></label>
-      <label class="check buy-agree"><input type="checkbox" name="agree" required>
-        <span>فاهم إن الكتاب ملف PDF بيتحمّل <b>مرة واحدة على جهاز واحد</b>، وإن البيع نهائي ومفيهوش استرجاع إلا في الحالات المذكورة في <a href="/refund.html" target="_blank">سياسة الاسترجاع</a>، وموافق على <a href="/terms.html" target="_blank">الشروط والأحكام</a>.</span></label>
-      <p class="form-err" data-err hidden role="alert"></p>
-      <button class="buy-btn" type="submit">${ic('lock', 20)} ادفع ${esc(window.fmtPrice(post.price))}</button>
-      <div class="bk-pay">${window.payLogos()}<small>هيتم تحويلك لصفحة الدفع الآمنة لبوابة Kashier</small></div>
-    </form>`;
-    document.body.appendChild(d);
-    d.showModal();
-    d.addEventListener('close', () => d.remove());
-    d.querySelector('[data-close]').onclick = () => d.close();
-    const form = d.querySelector('form');
-    const err = d.querySelector('[data-err]');
-    form.onsubmit = async ev => {
-      ev.preventDefault();
-      const f = new FormData(form);
-      const buyer = { name: String(f.get('name') || '').trim(), email: String(f.get('email') || '').trim(), phone: String(f.get('phone') || '').replace(/[\s-]/g, '') };
-      const fail = t => { err.textContent = t; err.hidden = false; };
-      if (buyer.name.length < 2) return fail('اكتب اسمك.');
-      if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(buyer.email)) return fail('اكتب بريد إلكتروني صحيح.');
-      if (!/^\+?\d{8,15}$/.test(buyer.phone)) return fail('اكتب رقم موبايل صحيح.');
-      if (!f.get('agree')) return fail('لازم توافق إن التحميل مرة واحدة وإن البيع نهائي.');
-      err.hidden = true;
-      const btn = form.querySelector('button[type=submit]');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" aria-hidden="true"></span> جاري تجهيز صفحة الدفع...';
-      window.store.set('miftah_buyer', buyer);
-      try {
-        const res = await window.DB.checkout(slug, buyer);
-        rememberOrder({ id: res.order, token: res.token, slug, title: post.title, at: new Date().toISOString() });
-        location.href = res.url;
-      } catch (e2) {
-        fail(e2.message || 'حصلت مشكلة. حاول تاني.');
-        btn.disabled = false;
-        btn.innerHTML = `${ic('lock', 20)} ادفع ${esc(window.fmtPrice(post.price))}`;
-      }
-    };
+  // One tap: the order is made on the server and the buyer goes straight to Kashier's page,
+  // where the card details are entered. Nothing to fill in here.
+  async function buy() {
+    if (state.buying) return;
+    state.buying = true; render();
+    try {
+      const res = await window.DB.checkout(slug, {});
+      rememberOrder({ id: res.order, token: res.token, slug, title: post.title, at: new Date().toISOString() });
+      location.href = res.url;
+      // Coming back with the browser's Back button shows the page ready again.
+      setTimeout(() => { state.buying = false; render(); }, 8000);
+    } catch (e) {
+      state.buying = false; render();
+      window.toast(e.message || 'حصلت مشكلة. حاول تاني.', 'err');
+    }
   }
+
+  // The book on a sale page turns toward the mouse or finger, then settles back.
+  root.addEventListener('pointermove', e => {
+    const v = e.target.closest && e.target.closest('.bk-visual');
+    if (!v) return;
+    const book = v.querySelector('.book3d');
+    const r = v.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+    book.style.setProperty('--ry', `${(-24 + x * 40).toFixed(1)}deg`);
+    book.style.setProperty('--rx', `${(-6 - y * 16).toFixed(1)}deg`);
+  });
+  root.addEventListener('pointerout', e => {
+    const v = e.target.closest && e.target.closest('.bk-visual');
+    if (!v || v.contains(e.relatedTarget)) return;
+    const book = v.querySelector('.book3d');
+    book.style.removeProperty('--ry'); book.style.removeProperty('--rx');
+  });
 
   root.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
-    if (act === 'buy') { openBuyForm(); return; }
+    if (act === 'buy') { buy(); return; }
     if (act === 'download') {
       e.preventDefault();
       downloadFile(b, state.items.find(x => x.id === id));

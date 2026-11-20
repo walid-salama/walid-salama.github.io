@@ -206,7 +206,7 @@
         ${shown.length ? `<div class="row row-head"><span>الكتاب والمشتري</span><span>المبلغ</span><span>الحالة</span><span>التاريخ</span><span>تحميل</span></div>` : ''}
         ${shown.map(o => `<div class="row">
           <div class="row-main"><span class="row-title"><b dir="auto">${esc(o.title || 'كتاب')}</b>
-            <small class="buyer"><bdi>${esc(o.name)}</bdi> · <bdi dir="ltr">${esc(o.email)}</bdi> · <bdi dir="ltr">${esc(o.phone)}</bdi></small>
+            <small class="buyer">${[o.name, o.email, o.phone].filter(Boolean).map(v => `<bdi dir="auto">${esc(v)}</bdi>`).join(' · ') || 'بيانات المشتري عند Kashier'}</small>
             <small class="muted" dir="ltr">#${esc(o.id.slice(0, 8).toUpperCase())}${o.transaction_id ? ` · tx ${esc(o.transaction_id)}` : ''}</small></span></div>
           <span class="num">${esc(window.fmtPrice(o.amount))}</span>
           <span><small class="tag ${(ST[o.status] || ST.pending)[1]}">${(ST[o.status] || ST.pending)[0]}</small></span>

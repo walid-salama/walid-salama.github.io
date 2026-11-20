@@ -256,12 +256,18 @@
     <svg class="pay-mc" viewBox="0 0 64 40" role="img" aria-label="Mastercard"><rect width="64" height="40" rx="6" fill="#fff"/><circle cx="26" cy="20" r="11" fill="#eb001b"/><circle cx="38" cy="20" r="11" fill="#f79e1b"/><path d="M32 10.8a11 11 0 0 1 0 18.4 11 11 0 0 1 0-18.4z" fill="#ff5f00"/></svg>
   </span>`;
 
-  // The cover as a real book: front, page edges and spine, slightly turned.
+  // The cover as a real 3D book. The picture keeps its own shape (designed at 3:4, upright);
+  // around it: the page block on the open side, the top edge, the back cover, the spine fold,
+  // a light sheen and a shadow on the ground. The book page turns it toward the mouse.
   window.book3d = (cover, big) => `<div class="book3d ${big ? 'big' : ''}">
       <div class="book3d-inner">
         ${cover ? `<img class="b-front" src="${esc(cover)}" alt="" loading="lazy">` : `<div class="b-front b-blank">${ic('file', 40)}</div>`}
-        <span class="b-pages" aria-hidden="true"></span><span class="b-back" aria-hidden="true"></span>
-      </div></div>`;
+        <span class="b-shine" aria-hidden="true"></span>
+        <span class="b-pages" aria-hidden="true"></span>
+        <span class="b-top" aria-hidden="true"></span>
+        <span class="b-back" aria-hidden="true"></span>
+      </div>
+      <span class="b-ground" aria-hidden="true"></span></div>`;
 
   window.bookFacts = function (book) {
     const b = book || {};
@@ -300,7 +306,8 @@
             <div class="bk-price"><span>السعر</span><b>${esc(window.fmtPrice(post.price))}</b><small>دفعة واحدة · من غير اشتراك</small></div>
             <button class="buy-btn" data-act="buy" ${s.buying ? 'disabled' : ''}>
               ${s.buying ? '<span class="spinner" aria-hidden="true"></span> جاري تجهيز الدفع...' : `${ic('lock', 20)} اشترِ الآن`}</button>
-            <div class="bk-pay">${window.payLogos()}<small>دفع آمن بالفيزا أو الماستركارد</small></div>
+            <div class="bk-pay">${window.payLogos()}<small>دفع آمن بالفيزا أو الماستركارد عن طريق Kashier</small></div>
+            <p class="bk-terms">التحميل مرة واحدة على جهاز واحد، والبيع نهائي ومفيهوش استرجاع. بالضغط على "اشترِ الآن" انت موافق على <a href="/terms.html">الشروط</a> و<a href="/refund.html">سياسة الاسترجاع</a>.</p>
           </div>
         </div>
       </section>
@@ -309,16 +316,10 @@
         <ul class="bk-feat">${features.map(f => `<li>${ic('check', 18)}<span dir="auto">${esc(f)}</span></li>`).join('')}</ul></section>
       <section class="bk-sec"><h2>إزاي تشتري؟</h2>
         <ol class="bk-steps">
-          <li><b>اضغط "اشترِ الآن"</b><span>واكتب اسمك وبريدك ورقم موبايلك.</span></li>
-          <li><b>ادفع بالكارت</b><span>فيزا أو ماستركارد، على صفحة الدفع الآمنة لبوابة Kashier.</span></li>
+          <li><b>اضغط "اشترِ الآن"</b><span>هتتحوّل على طول لصفحة الدفع الآمنة لبوابة Kashier.</span></li>
+          <li><b>ادفع بالكارت</b><span>فيزا أو ماستركارد.</span></li>
           <li><b>حمّل الكتاب فورًا</b><span>أول ما الدفع يتأكد، صفحة التحميل الخاصة بيك هتفتح لوحدها.</span></li>
         </ol></section>
-      <section class="bk-sec bk-faq"><h2>أسئلة شائعة</h2>
-        <details><summary>هل الدفع آمن؟</summary><p>أيوه. الدفع بيتم على صفحة بوابة الدفع Kashier المرخّصة في مصر، وبيانات الكارت مش بتوصل لموقعنا خالص.</p></details>
-        <details><summary>هستلم الكتاب إزاي؟</summary><p>بعد الدفع بتفتح لك صفحة تحميل خاصة بطلبك. <b>التحميل مرة واحدة بس وعلى جهاز واحد</b>، فحمّله وانت النت عندك كويس. ولو التحميل وقف، تقدر تعيده من نفس الجهاز خلال 15 دقيقة.</p></details>
-        <details><summary>ينفع أرجّع الكتاب؟</summary><p>الكتاب ملف PDF، وأول ما يتحمّل البيع بيبقى نهائي. عدم الإعجاب بالكتاب مش سبب للاسترجاع. الاسترجاع بيكون بس لو اتخصم منك المبلغ مرتين، أو الملف بايظ، أو الكتاب ما وصلكش. التفاصيل في <a href="/refund.html">سياسة الاسترجاع</a>.</p></details>
-        <details><summary>لو حصلت مشكلة في الدفع أو التحميل؟</summary><p>تواصل معانا وابعت رقم الطلب، وهنحل المشكلة.</p></details>
-      </section>
       <p class="bk-legal"><a href="/terms.html">الشروط والأحكام</a> · <a href="/refund.html">سياسة الاسترجاع</a> · <a href="/privacy.html">سياسة الخصوصية</a> · <a href="/contact.html">تواصل معنا</a></p>
     </article>`;
   };

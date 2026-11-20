@@ -37,7 +37,7 @@ window.SITE_CONFIG = {
   legal: {
     businessName: 'أبو حنين القناص',
     owner: 'وليد سلامة',
-    email: 'mouugfwr@gmail.com',
+    email: 'swlyd3393@gmail.com',
     phone: '01154846407',
     whatsapp: '',
     address: 'جمهورية مصر العربية',
