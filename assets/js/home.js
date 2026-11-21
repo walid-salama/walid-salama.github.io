@@ -43,19 +43,16 @@
 
   const href = p => `/${encodeURIComponent(p.slug)}`;
   // The blurred copy fills the frame, so a picture of any shape shows whole with no empty bars.
-  // A book for sale shows as a real book with its price; free content keeps its picture.
+  // Every card shows its picture whole, the same way; a book for sale gets its price badge.
   const media = p => {
     const img = window.safeImg(p.cover_url);
-    if (p.paid) {
-      return `<div class="pc-media pc-book">
-        ${img ? `<img class="pc-blur" src="${esc(img)}" alt="" aria-hidden="true" loading="lazy">` : ''}
-        ${window.book3d(img)}
-        <span class="pc-badge paid">${esc(window.fmtPrice(p.price))}</span></div>`;
-    }
+    const badge = p.paid
+      ? `<span class="pc-badge paid">${esc(window.fmtPrice(p.price))}</span>`
+      : `<span class="pc-badge">${ic('lock', 14)} مجاني</span>`;
     return img ? `<div class="pc-media">
         <img class="pc-blur" src="${esc(img)}" alt="" aria-hidden="true" loading="lazy">
         <img class="pc-img" src="${esc(img)}" alt="" loading="lazy">
-        <span class="pc-badge">${ic('lock', 14)} مجاني</span></div>` : '';
+        ${badge}</div>` : '';
   };
   const meta = p => `<div class="post-meta">
       ${p.paid && Number(p.pages) > 0 ? `<span>${ic('article', 15)} ${Number(p.pages).toLocaleString('en')} صفحة</span>` : ''}
@@ -66,7 +63,7 @@
     ? `<span class="post-cta buy">${ic('lock', 16)} اشترِ الآن <b>${esc(window.fmtPrice(p.price))}</b></span>`
     : `<span class="post-cta">افتح المحتوى ${ic('arrow', 16)}</span>`);
 
-  const card = p => `<a class="post-card ${p.paid ? 'is-paid' : ''} ${window.safeImg(p.cover_url) || p.paid ? '' : 'no-img'}" href="${href(p)}">
+  const card = p => `<a class="post-card ${p.paid ? 'is-paid' : ''} ${window.safeImg(p.cover_url) ? '' : 'no-img'}" href="${href(p)}">
       ${media(p)}
       <div class="post-body">
         <h3 dir="auto">${esc(p.title)}</h3>
@@ -157,9 +154,6 @@
       el.style.setProperty('--my', `${y * 100}%`);
     });
   }
-
-  // Books for sale tilt toward the mouse (a tap still opens them).
-  window.bookSpin(document.querySelector('.feed'));
 
   // Search and the free / paid tabs work together.
   let kind = 'all';
