@@ -261,13 +261,69 @@
   // a light sheen and a shadow on the ground. The book page turns it toward the mouse.
   window.book3d = (cover, big) => `<div class="book3d ${big ? 'big' : ''}">
       <div class="book3d-inner">
-        ${cover ? `<img class="b-front" src="${esc(cover)}" alt="" loading="lazy">` : `<div class="b-front b-blank">${ic('file', 40)}</div>`}
+        ${cover ? `<img class="b-front" src="${esc(cover)}" alt="" loading="lazy" draggable="false">` : `<div class="b-front b-blank">${ic('file', 40)}</div>`}
         <span class="b-shine" aria-hidden="true"></span>
         <span class="b-pages" aria-hidden="true"></span>
         <span class="b-top" aria-hidden="true"></span>
-        <span class="b-back" aria-hidden="true"></span>
+        <span class="b-bottom" aria-hidden="true"></span>
+        <span class="b-spine" aria-hidden="true" ${cover ? `style="background-image:${cssUrl(cover)}"` : ''}></span>
+        <span class="b-back" aria-hidden="true" ${cover ? `style="background-image:${cssUrl(cover)}"` : ''}><b>أبو حنين القناص</b><small>PDF</small></span>
       </div>
       <span class="b-ground" aria-hidden="true"></span></div>`;
+
+  // Turns a book with the mouse or a finger: drag to spin it (its spine, pages and back show),
+  // hover to tilt it on computers. Let go and it settles back. Works on any .book3d inside el;
+  // books inside links only tilt, so a tap still opens the link.
+  window.bookSpin = function (el) {
+    if (!el || el.dataset.spin) return;
+    el.dataset.spin = '1';
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const fine = window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches;
+    let drag = null, rest = null;
+    const set = (book, ry, rx) => { book.style.setProperty('--ry', `${ry.toFixed(1)}deg`); book.style.setProperty('--rx', `${rx.toFixed(1)}deg`); };
+    const settle = book => {
+      clearTimeout(rest);
+      rest = setTimeout(() => { book.classList.remove('turning'); book.style.removeProperty('--ry'); book.style.removeProperty('--rx'); }, 1400);
+    };
+    el.addEventListener('pointerdown', e => {
+      const book = e.target.closest('.book3d');
+      if (!book || book.closest('a')) return;
+      const cs = getComputedStyle(book);
+      drag = { book, x: e.clientX, y: e.clientY, ry: parseFloat(cs.getPropertyValue('--ry')) || -34, rx: parseFloat(cs.getPropertyValue('--rx')) || -9 };
+      clearTimeout(rest);
+      book.classList.add('turning', 'grabbed');
+      try { book.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    el.addEventListener('pointermove', e => {
+      if (drag) {
+        set(drag.book, clamp(drag.ry + (e.clientX - drag.x) * 0.6, -170, 170), clamp(drag.rx - (e.clientY - drag.y) * 0.35, -35, 25));
+        return;
+      }
+      if (!fine) return;
+      const book = e.target.closest('.book3d');
+      if (!book) return;
+      const r = book.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      book.classList.add('turning');
+      set(book, -26 + x * 46, -8 - y * 20);
+      settle(book);
+    });
+    const end = () => { if (!drag) return; drag.book.classList.remove('grabbed'); settle(drag.book); drag = null; };
+    // Let go anywhere (even off the page, or when the phone takes over to scroll).
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', end);
+  };
+
+  // Every way Kashier takes money on this store, shown on each book for sale.
+  window.payMethods = () => `<div class="pay-methods">
+      <div class="pm"><i>${ic('lock', 18)}</i><span><b>الكروت</b><small>فيزا · ماستركارد · ميزة · أمريكان إكسبريس</small></span></div>
+      <div class="pm"><i>${ic('phone', 18)}</i><span><b>المحافظ الإلكترونية</b><small>فودافون كاش وكل المحافظ</small></span></div>
+      <div class="pm"><i>${ic('external', 18)}</i><span><b>إنستاباي</b><small>InstaPay</small></span></div>
+      <div class="pm"><i>${ic('chart', 18)}</i><span><b>تقسيط البنوك</b><small>على كروت البنوك المشاركة</small></span></div>
+      <div class="pm"><i>${ic('clock', 18)}</i><span><b>اشتري دلوقتي وادفع بعدين</b><small>valU و Contact وغيرهم</small></span></div>
+      <div class="pm"><i>${ic('gift', 18)}</i><span><b>بساطة</b><small>Basata</small></span></div>
+    </div>`;
 
   window.bookFacts = function (book) {
     const b = book || {};
@@ -275,7 +331,7 @@
     if (Number(b.pages) > 0) facts.push(['article', 'عدد الصفحات', `${Number(b.pages).toLocaleString('en')} صفحة`]);
     if (b.language) facts.push(['text', 'اللغة', LANGS[b.language] || b.language]);
     facts.push(['file', 'الصيغة', b.format || 'PDF']);
-    if (b.size) facts.push(['download', 'حجم الملف', b.size]);
+    if (b.size) facts.push(['download', 'حجم الملف', /^\d+([.,]\d+)?$/.test(String(b.size).trim()) ? `${String(b.size).trim()} ميجا` : b.size]);
     facts.push(['clock', 'الاستلام', 'تحميل فوري بعد الدفع']);
     return facts;
   };
@@ -295,7 +351,7 @@
       `<li><i>${ic(icon, 18)}</i><span><small>${esc(k)}</small><b dir="auto">${esc(v)}</b></span></li>`).join('');
     return `<article class="bk-page" style="--accent:${esc(theme.accent || '#10e08a')}">
       <section class="bk-hero">
-        <div class="bk-visual">${window.book3d(cover, true)}</div>
+        <div class="bk-visual">${window.book3d(cover, true)}<small class="spin-hint">${ic('arrow', 14)} اسحب الكتاب علشان تلفّه</small></div>
         <div class="bk-info">
           <span class="bk-kicker">${ic('file', 15)} كتاب PDF · للبيع</span>
           <div class="lk-head"><h1 dir="auto">${esc(post.title) || 'عنوان الكتاب'}</h1>
@@ -306,18 +362,20 @@
             <div class="bk-price"><span>السعر</span><b>${esc(window.fmtPrice(post.price))}</b><small>دفعة واحدة · من غير اشتراك</small></div>
             <button class="buy-btn" data-act="buy" ${s.buying ? 'disabled' : ''}>
               ${s.buying ? '<span class="spinner" aria-hidden="true"></span> جاري تجهيز الدفع...' : `${ic('lock', 20)} اشترِ الآن`}</button>
-            <div class="bk-pay">${window.payLogos()}<small>دفع آمن بالفيزا أو الماستركارد عن طريق Kashier</small></div>
+            <div class="bk-pay">${window.payLogos()}<small>كروت · محافظ · إنستاباي · تقسيط، عن طريق Kashier</small></div>
             <p class="bk-terms">التحميل مرة واحدة على جهاز واحد، والبيع نهائي ومفيهوش استرجاع. بالضغط على "اشترِ الآن" انت موافق على <a href="/terms.html">الشروط</a> و<a href="/refund.html">سياسة الاسترجاع</a>.</p>
           </div>
         </div>
       </section>
       ${post.description ? `<section class="bk-sec"><h2>عن الكتاب</h2><p class="bk-desc" dir="auto">${esc(post.description)}</p></section>` : ''}
+      <section class="bk-sec"><h2>ادفع بالطريقة اللي تناسبك</h2>${window.payMethods()}
+        <p class="pm-note">${ic('lock', 14)} الدفع كله على صفحة Kashier الآمنة، وبيانات الدفع مش بتوصل لموقعنا.</p></section>
       <section class="bk-sec"><h2>هتحصل على إيه؟</h2>
         <ul class="bk-feat">${features.map(f => `<li>${ic('check', 18)}<span dir="auto">${esc(f)}</span></li>`).join('')}</ul></section>
       <section class="bk-sec"><h2>إزاي تشتري؟</h2>
         <ol class="bk-steps">
           <li><b>اضغط "اشترِ الآن"</b><span>هتتحوّل على طول لصفحة الدفع الآمنة لبوابة Kashier.</span></li>
-          <li><b>ادفع بالكارت</b><span>فيزا أو ماستركارد.</span></li>
+          <li><b>ادفع بالطريقة اللي تريحك</b><span>كارت، محفظة، إنستاباي، أو تقسيط.</span></li>
           <li><b>حمّل الكتاب فورًا</b><span>أول ما الدفع يتأكد، صفحة التحميل الخاصة بيك هتفتح لوحدها.</span></li>
         </ol></section>
       <p class="bk-legal"><a href="/terms.html">الشروط والأحكام</a> · <a href="/refund.html">سياسة الاسترجاع</a> · <a href="/privacy.html">سياسة الخصوصية</a> · <a href="/contact.html">تواصل معنا</a></p>

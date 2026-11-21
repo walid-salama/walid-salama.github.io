@@ -44,7 +44,7 @@ window.SITE_CONFIG = {
     updated: '2026-11-20',
   },
 
-  bio: 'متجر كتب PDF في كل المجالات: كتب مجانية تفتحها بخطوة واحدة، وكتب مدفوعة تشتريها بالفيزا أو الماستركارد وتحمّلها فورًا.',
+  bio: 'متجر كتب PDF في كل المجالات: كتب مجانية تفتحها بخطوة واحدة، وكتب مدفوعة تشتريها بالكارت أو المحفظة أو إنستاباي وتحمّلها فورًا.',
   // Shown on the home page. p picks the icon and color from PLATFORMS in actions.js.
   socials: [
     { p: 'youtube', label: 'هدفنا الفلوس', sub: 'قناة يوتيوب', url: 'https://www.youtube.com/channel/UCV261ZxSoBwUMZ5cKd_LjyQ' },

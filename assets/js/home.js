@@ -26,7 +26,7 @@
   $('footSocial').innerHTML = socials.map(iconLink).join('');
   $('footContact').innerHTML = contacts.map(iconLink).join('');
   $('copy').textContent = `© ${new Date().getFullYear()} ${C.siteName}. كل الحقوق محفوظة.`;
-  if ($('footPay')) $('footPay').innerHTML = `${window.payLogos()}<span>الدفع الآمن بالفيزا والماستركارد عن طريق بوابة Kashier</span>`;
+  if ($('footPay')) $('footPay').innerHTML = `${window.payLogos()}<span>الدفع الآمن عن طريق Kashier: كروت، محافظ إلكترونية، إنستاباي، تقسيط</span>`;
 
   // --------------------------------------------------------------- posts
   const grid = $('grid');
@@ -157,6 +157,9 @@
       el.style.setProperty('--my', `${y * 100}%`);
     });
   }
+
+  // Books for sale tilt toward the mouse (a tap still opens them).
+  window.bookSpin(document.querySelector('.feed'));
 
   // Search and the free / paid tabs work together.
   let kind = 'all';

@@ -392,22 +392,8 @@
     }
   }
 
-  // The book on a sale page turns toward the mouse or finger, then settles back.
-  root.addEventListener('pointermove', e => {
-    const v = e.target.closest && e.target.closest('.bk-visual');
-    if (!v) return;
-    const book = v.querySelector('.book3d');
-    const r = v.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
-    book.style.setProperty('--ry', `${(-24 + x * 40).toFixed(1)}deg`);
-    book.style.setProperty('--rx', `${(-6 - y * 16).toFixed(1)}deg`);
-  });
-  root.addEventListener('pointerout', e => {
-    const v = e.target.closest && e.target.closest('.bk-visual');
-    if (!v || v.contains(e.relatedTarget)) return;
-    const book = v.querySelector('.book3d');
-    book.style.removeProperty('--ry'); book.style.removeProperty('--rx');
-  });
+  // The book on a sale page spins with the mouse or a finger (view.js).
+  window.bookSpin(root);
 
   root.addEventListener('click', async e => {
     const b = e.target.closest('[data-act]');
