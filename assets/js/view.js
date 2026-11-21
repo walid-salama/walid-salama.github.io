@@ -362,7 +362,15 @@
             <div class="bk-price"><span>السعر</span><b>${esc(window.fmtPrice(post.price))}</b><small>دفعة واحدة · من غير اشتراك</small></div>
             <button class="buy-btn" data-act="buy" ${s.buying ? 'disabled' : ''}>
               ${s.buying ? '<span class="spinner" aria-hidden="true"></span> جاري تجهيز الدفع...' : `${ic('lock', 20)} اشترِ الآن`}</button>
-            <div class="bk-pay">${window.payLogos()}<small>كروت · محافظ · إنستاباي · تقسيط، عن طريق Kashier</small></div>
+            <div class="bk-pay">${window.payLogos()}<small>ادفع بأي طريقة عن طريق Kashier:</small></div>
+            <ul class="pm-chips">
+              <li>${ic('lock', 14)} الكروت: فيزا · ماستركارد · ميزة · أمريكان إكسبريس</li>
+              <li>${ic('phone', 14)} المحافظ الإلكترونية</li>
+              <li>${ic('external', 14)} إنستاباي</li>
+              <li>${ic('chart', 14)} تقسيط البنوك</li>
+              <li>${ic('clock', 14)} اشتري دلوقتي وادفع بعدين (valU و Contact)</li>
+              <li>${ic('gift', 14)} بساطة</li>
+            </ul>
             <p class="bk-terms">التحميل مرة واحدة على جهاز واحد، والبيع نهائي ومفيهوش استرجاع. بالضغط على "اشترِ الآن" انت موافق على <a href="/terms.html">الشروط</a> و<a href="/refund.html">سياسة الاسترجاع</a>.</p>
           </div>
         </div>
