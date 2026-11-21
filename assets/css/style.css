@@ -193,6 +193,9 @@ body.home .wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 20p
 .featured { display: grid; grid-template-columns: 1.15fr 1fr; overflow: hidden; margin-bottom: 26px; background: linear-gradient(135deg, #1c2128, #13161b); border: 1px solid rgba(255, 255, 255, .1); border-radius: 24px; box-shadow: 0 20px 56px rgba(0, 0, 0, .35); transition: border-color .2s, transform .2s; }
 .featured:hover { border-color: var(--accent); transform: translateY(-3px); }
 .featured .pc-media { aspect-ratio: 16/10; height: 100%; }
+/* the picture stays inside its half of the card, whatever the card's height */
+.featured > .pc-media { width: 100%; min-width: 0; aspect-ratio: auto; min-height: 260px; }
+.featured > .featured-body { min-width: 0; }
 .featured-body { display: flex; flex-direction: column; justify-content: center; gap: 14px; padding: clamp(20px, 3.4vw, 40px); }
 .featured-tag { align-self: flex-start; padding: 4px 12px; border-radius: 99px; background: rgba(16, 224, 138, .14); color: var(--accent); font-size: 13px; font-weight: 900; }
 .featured h3 { font-size: clamp(22px, 2.8vw, 32px); line-height: 1.35; overflow-wrap: anywhere; }
@@ -739,8 +742,9 @@ select:focus { border-color: var(--accent); }
 /* a cover shown as a real book: front, page edges, back */
 /* a cover as a real 3D book: it keeps its own shape (designed upright at 3:4), and can be
    spun with the mouse or a finger (view.js bookSpin) */
-@property --ry { syntax: '<angle>'; inherits: true; initial-value: -34deg; }
-@property --rx { syntax: '<angle>'; inherits: true; initial-value: -9deg; }
+/* 0 by default: only .book3d sets its own turn, so home cards stay flat */
+@property --ry { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
+@property --rx { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
 .book3d { --t: 20px; --ry: -34deg; --rx: -9deg; display: grid; justify-items: center; align-content: center; perspective: 1600px; }
 .book3d.big { --t: 52px; touch-action: pan-y; cursor: grab; user-select: none; -webkit-user-select: none; }
 .book3d.big.grabbed { cursor: grabbing; }
@@ -946,3 +950,6 @@ body.order-page, body.legal-page { display: flex; flex-direction: column; backgr
 .pm small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 .pm-note { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--muted); font-size: 13px; }
 .bk-visual { padding: 18px 0 4px; }
+.pm-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 10px 0 0; padding: 0; list-style: none; }
+.pm-chips li { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; background: rgba(16, 224, 138, .08); border: 1px solid rgba(16, 224, 138, .25); color: #d9f9ec; font-size: 12.5px; font-weight: 800; }
+.pm-chips .ic { color: var(--accent); }
